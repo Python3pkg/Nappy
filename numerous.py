@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2014, Neil Webber
+# All rights reserved. 
+#
+# See LICENSE file
+#
 # #################
 #
 # Classes for the NumerousApp API
