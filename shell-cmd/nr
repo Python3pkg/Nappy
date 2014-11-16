@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# CUSTOMIZE THIS to however/wherever you installed:
+#                  - numerous.py library (usually ~/lib)
+#                  - nr.py python shell-level command (usually ~/bin)
+#                  
+
+PYTHONPATH=$HOME/lib $HOME/bin/nr.py "$@"

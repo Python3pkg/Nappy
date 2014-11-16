@@ -1,0 +1,26 @@
+---------------
+numerous.py
+---------------
+
+Python class implementing the NumerousApp APIs.
+
+DEPENDENCIES:
+
+  * python3 (developed/tested on python3)
+  * requests library
+
+INSTALLING/USING:
+
+Typically you install this in ~/lib (or somewhere in your PYTHONPATH).
+Here is a "hello world" example:
+
+   from numerous import Numerous
+
+   MyKey = "nmrs_3Vblahblah"         # your personal NumerousApp API key
+   MyMetric = "5746205777638039629"  # ID of a metric you have access to
+
+   nr = Numerous(apiKey=MyKey)
+   metric = nr.metric(MyMetric)
+
+   print (metric.read())
+

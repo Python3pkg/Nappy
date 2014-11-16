@@ -1,0 +1,671 @@
+#!/bin/sh
+#
+# test script for the nr program
+#
+#
+
+
+PATH=$HOME/bin:$HOME/bin:$PATH
+NR=nr
+PYTHON=python3
+TMPFILE=/tmp/$$
+DELETE_THESE=""
+EXITSTATUS=0
+
+QUICK=no
+
+if [ "x$1" = "x-Q" ]
+then
+  QUICK=yes
+fi
+
+#
+# Test the -k function first of all
+#
+
+if [ "x$NUMEROUSAPIKEY" = x ]
+then
+  NUMEROUSAPIKEY=$HOME/.myCred export NUMEROUSAPIKEY
+fi
+
+echo "Version under test:" `$NR -V`
+
+echo "TESTING::: $NR -k"
+APIKEY=`$NR -k`
+if [ "x$APIKEY" = x ]
+then
+  echo "Testing -k .. failed"
+  exit 1
+fi
+
+#
+# See if we can successfully connect
+#
+echo "TESTING::: $NR -q"
+$NR -q
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+#
+# Create a test metric to bang on
+#
+M=nrTEST$$
+Mparams='{ "private" : true, "value" : 999 }'
+MVAL=999   # must match value here     ---
+
+echo "TESTING::: $NR -wM +$M $Mparams"
+$NR -wM +$M "$Mparams" > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+METRIC=`cat $TMPFILE`
+
+echo "CREATED::: $METRIC"
+
+DELETE_THESE="$DELETE_THESE $METRIC"
+
+# see if it got created with the correct privacy and value
+echo "TESTING::: $NR $METRIC"
+$NR $METRIC > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+if [ "x`cat $TMPFILE`" != "x$MVAL" ]
+then
+  echo "wrong initial value: `cat $TMPFILE`" 
+  exit 1
+fi
+
+echo "TESTING::: $NR $METRIC[private]"
+$NR $METRIC'[private]' > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+if [ "x`cat $TMPFILE`" != "xTrue" ]
+then
+  echo "wrong private setting: `cat $TMPFILE`" 
+  exit 1
+fi
+
+# write a value
+echo "TESTING::: $NR -w $METRIC $$"
+$NR -w $METRIC $$ > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+if [ "x`cat $TMPFILE`" != "x$$" ]
+then 
+  echo "wrong output" ; echo "....." 
+  cat $TMPFILE
+  echo "....." 
+  exit 1
+fi
+
+# write the same value with -y, should "fail"
+echo "TESTING::: $NR -wyq $METRIC $$"
+$NR -wyq $METRIC $$
+if [ $? = 0 ]; then echo "failed"; exit 1; fi
+
+# interject a comment
+
+
+# TESTING comment using naked comment idiom
+C='this be the naked comment'
+echo "TESTING::: $NR -wIq $METRIC $C"
+$NR -wIq $METRIC 'this be the naked comment'
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# see if that comment is actually there now
+echo "TESTING::: $NR -I $METRIC"
+$NR -I $METRIC > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+X=`head -1 $TMPFILE | sed -e 's/^.* -- //'`
+if [ "x$X" != "x$C" ]; then echo "failed: $X"; exit 1; fi
+
+# AGAIN write the same value with -y, should "fail"
+echo "TESTING::: $NR -wyq $METRIC $$ # AGAIN"
+$NR -wyq $METRIC $$
+if [ $? = 0 ]; then echo "failed"; exit 1; fi
+
+
+# increment by 1
+echo "TESTING::: $NR -w+q $METRIC 1"
+$NR -w+q $METRIC 1
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# now writing the original test value with -y should succeed
+echo "TESTING::: $NR -wyq $METRIC $$"
+$NR -wyq $METRIC $$
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# see if the add really works correctly...
+echo "TESTING::: $NR -wq $METRIC 17"
+$NR -wq $METRIC 17
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+echo "TESTING::: $NR -w+q $METRIC 3"
+$NR -w+q $METRIC 3
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+echo "TESTING::: $NR -w+q $METRIC -21"
+$NR -w+q $METRIC -21
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# should be -1 now
+$NR $METRIC > $TMPFILE
+if [ $? != 0 ]; then echo "failed: cannot read back"; exit 1; fi
+X=`cat $TMPFILE`
+if [ "x$X" != "x-1" ]
+then
+  echo "FAILED:::: Results of ADDs do not add up correctly"
+fi
+
+# try making an error entry
+ErrString="This is the error info"
+ErrInfo="{ \"kind\": \"error\", \"commentBody\": \"$ErrString\" }"
+echo "TESTING::: $NR -wIq $METRIC $ErrInfo"
+$NR -wIq $METRIC "$ErrInfo"
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+
+# see if that error is actually there now and also test --limit
+echo "TESTING::: $NR -I --limit 1 $METRIC"
+$NR -I --limit 1 $METRIC > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+X=`sed -e 's/^.* -- //' $TMPFILE`
+if [ "x$X" != "x$ErrString" ]; then echo "failed: $X"; exit 1; fi
+
+
+# test updating a metric's description
+Desc="This is the metric's porpoise in life"
+Units="blivets"
+updateJSON="{ \"description\": \"$Desc\", \"units\" : \"$Units\" }"
+echo "TESTING::: $NR -wMq $METRIC $updateJSON"
+$NR -wMq $METRIC "$updateJSON"
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+echo "TESTING::: $NR ${METRIC}[description]   # verifying updated description"
+X=`$NR ${METRIC}[description]`
+
+if [ "x$X" != "x$Desc" ]
+then
+  echo "failed: description did not read back correctly"
+  exit 1
+fi
+
+echo "TESTING::: $NR ${METRIC}[units]   # verifying updated units"
+X=`$NR ${METRIC}[units]`
+if [ "x$X" != "x$Units" ]
+then
+  echo "failed: units did not read back correctly"
+  exit 1
+fi
+
+# once more to check read/mod/write feature
+Desc="something else"
+updateJSON="{ \"description\": \"$Desc\" }"
+echo "TESTING::: $NR -wMq $METRIC $updateJSON"
+$NR -wMq $METRIC "$updateJSON"
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+echo "TESTING::: $NR ${METRIC}[description]"
+X=`$NR ${METRIC}[description]`
+
+if [ "x$X" != "x$Desc" ]
+then
+  echo "failed: 2nd description did not read back correctly"
+  exit 1
+fi
+
+echo "TESTING::: $NR ${METRIC}[units]   # re-verifying units"
+X=`$NR ${METRIC}[units]`
+if [ "x$X" != "x$Units" ]
+then
+  echo "failed: units got clobbered"
+  exit 1
+fi
+
+# make another "virgin" metric to bang on
+VGM=nrVGTEST$$
+VGMparams='{ "private" : true }'
+
+echo "TESTING::: $NR -wM +$VGM $VGMparams"
+$NR -wM +$VGM "$VGMparams" > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+VGMETRIC=`cat $TMPFILE`
+
+echo "CREATED::: $VGMETRIC"
+
+DELETE_THESE="$DELETE_THESE $VGMETRIC"
+
+# make sure getting an empty collection of various flavors works
+for ARG in E I S
+do
+  echo "TESTING::: $NR -${ARG} $VGMETRIC    # expecting zero output"
+  $NR -${ARG} $VGMETRIC > $TMPFILE
+  if [ $? != 0 ]; then echo "failed"; exit 1; fi
+  X=`cat $TMPFILE`
+  if [ "x$X" != x ]
+  then
+    echo "failed -- got $X"
+    exit 1
+  fi
+done
+
+
+
+
+
+
+
+# fire off 10 add +1 operations in parallel
+#
+# XXX there is a bug (acknowledged by Numerous) and the ADD operations
+#     are not currently atomic. So rather than reporting that as a failure
+#     what we're going to do here is simply report whether they behaved
+#     atomically or not.
+
+echo "TESTING::: 10 x $NR -w+q $METRIC 1 -- in parallel"
+$NR -wq $METRIC 0
+for i in 0 1 2 3 4 5 6 7 8 9
+do
+  $NR -w+q $METRIC 1 &
+done
+
+wait 
+
+$NR $METRIC > $TMPFILE
+if [ $? != 0 ]; then echo "failed: cannot read back"; exit 1; fi
+X=`cat $TMPFILE`
+if [ "x$X" != "x10" ]
+then
+  echo "**FYI**::: Numerous server did not process ADDs atomically"
+fi
+
+# fire off 40 "onlyIfChanged" operations in parallel
+# only one of them should change the variable, the rest should be "NoChange"
+# XXX The server isn't necessarily atomic in this operation. It turns out
+#     that depending on the speed of the system this is running on 40
+#     instances might not be enough to reveal that. In an attempt to make
+#     it more likely, the sleep 3 seconds hack hopes to get all of these
+#     forked off in parallel before they try to start things.
+#
+
+if [ $QUICK = no ]
+then
+
+  echo "TESTING::: 40 x $NR -wy $METRIC $$ -- in parallel"
+  $NR -wq $METRIC 0
+  for j in 0 1 2 3
+  do
+    for i in 0 1 2 3 4 5 6 7 8 9
+    do
+      (sleep 3; $NR -wy $METRIC $$ > $TMPFILE.$j$i) &
+    done
+  done
+
+  wait 
+
+  rm $TMPFILE
+  touch $TMPFILE
+  for j in 0 1 2 3
+  do
+    for i in 0 1 2 3 4 5 6 7 8 9
+    do
+      echo Results from: $j$i >> $TMPFILE
+      cat $TMPFILE.$j$i >> $TMPFILE
+      rm -f $TMPFILE.$j$i
+      echo " - - - " >> $TMPFILE
+    done
+  done
+
+  # There should be 39 "NoChange" entries and only one entry that changed it
+  X=`grep NoChange $TMPFILE | wc -l`
+
+  if [ $X -ne 39 ]
+  then
+    Y=`python -c "print(40 - $X)"`
+    echo "The onlyIfChanged operation is not atomic. It changed $Y times."
+    echo "Details of log file follow: - - - - - - - - - -"
+    cat $TMPFILE
+    echo "end of log file - - - - - - - - -"
+  fi
+else
+  echo "QUICK::::: Skipping test of parallel onlyIf updates"
+fi
+
+# TEST like ... 
+echo "TESTING::: $NR -wIq $METRIC '{ \"kind\": \"like\" }'"
+$NR -wIq $METRIC '{ "kind": "like" }'
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# see if the Like is actually there now ... implicitly also 
+# tests reading interactions and the limit function
+echo "TESTING::: $NR -I $METRIC"
+$NR -I $METRIC --limit 1 > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+X=`sed -e 's/^like [0-9]* None.*/like/' < $TMPFILE`
+if [ "x$X" != "xlike" ]; then echo "failed: $X"; exit 1; fi
+
+
+#
+# Make some value events, then test to see if deleting them works
+#
+VSQ1=17
+VSQ2=42
+VSQ3=62
+VSQ4=69
+VSQ5=666
+
+
+# this is a brain dead way to do it but copy/paste was better than 
+# engineering some shell array hack or relying on bash
+
+echo "TESTING::: event deletion... first making events"
+$NR -wq $METRIC $VSQ1
+VID1=`$NR -S --limit 1 "${METRIC}[id]"`
+
+$NR -wq $METRIC $VSQ2
+VID2=`$NR -S --limit 1 "${METRIC}[id]"`
+
+$NR -wq $METRIC $VSQ3
+VID3=`$NR -S --limit 1 "${METRIC}[id]"`
+
+$NR -wq $METRIC $VSQ4
+VID4=`$NR -S --limit 1 "${METRIC}[id]"`
+
+$NR -wq $METRIC $VSQ5
+VID5=`$NR -S --limit 1 "${METRIC}[id]"`
+
+X=`$NR $METRIC`
+if [ "x$X" != "x$VSQ5" ]
+then
+  echo "FAILURE: $X is not $VSQ5"
+  exit 1
+fi
+
+echo "TESTING::: $NR --delete -E -q $METRIC $VID4"
+$NR --delete -E -q $METRIC $VID4
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+Y=`$NR $METRIC`
+if [ "$X" != "$Y" ]
+then
+  echo "FAILURE: [$X] is not [$Y]"
+  exit 1
+fi
+
+# now when we delete VID5 the value should become #3 bcs we deleted 4
+
+echo "TESTING::: $NR --delete -E -q $METRIC $VID5"
+$NR --delete -E -q $METRIC $VID5
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+Y=`$NR $METRIC`
+if [ "x$VSQ3" != "x$Y" ]
+then
+  echo "FAILURE: [$Y] is not [$VSQ3]"
+  exit 1
+fi
+
+# delete #4 again should get error
+echo "TESTING::: $NR --delete -E -q $METRIC $VID4"
+$NR --delete -qE $METRIC $VID4
+if [ $? = 0 ]; then echo "failed -- did not get error"; exit 1; fi
+
+# testing --delete on interactions
+# make a comment
+echo "TESTING::: interaction deletion... first making interactions"
+CMT="THIS IS THE COMMENT FOR WHICH WE ARE LOOKING"
+$NR -wIq $METRIC "$CMT"
+
+$NR -I --limit 1 $METRIC > $TMPFILE
+grep -q "$CMT" $TMPFILE
+if [ $? != 0 ]
+then
+  echo "failed ... did not find the designated comment after making it"
+  exit 1
+fi
+
+CMTID=`$NR -I --limit 1 "${METRIC}[id]"`
+
+echo "TESTING::: $NR --delete -I -q $METRIC $CMTID"
+$NR --delete -I -q $METRIC $CMTID
+
+# now the magic comment shouldn't be in there anywhere
+$NR -S $METRIC | grep -q "$CMT"
+if [ $? = 0 ]
+then
+  echo "failed ... the designated comment is still visible in the stream"
+  exit 1
+fi
+
+# testing photos... first make a tiny GIF file (one pixel image)
+GIFDATA="\\x47\\x49\\x46\\x38\\x39\\x61\\x01\\x00\\x01\\x00\\x80\\x00\\x00\\xff\\xff\\xff\\x00\\x00\\x00\\x2c\\x00\\x00\\x00\\x00\\x01\\x00\\x01\\x00\\x00\\x02\\x02\\x44\\x01\\x00\\x3b"
+
+GIFFILE=/tmp/g$$.gif
+GIFFILE2=/tmp/g2$$.gif
+
+$PYTHON -c "import sys; s=\"${GIFDATA}\"; sys.stdout.write(s)" > $GIFFILE
+
+# set the photo
+echo "TESTING::: $NR -wPq $METRIC $GIFFILE"
+$NR -wPq $METRIC $GIFFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# get the URL of the photo
+echo "TESTING::: $NR -P $METRIC"
+$NR -P $METRIC > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+echo "the URL is: `cat $TMPFILE`"
+
+# get the photo... we use python/requests because we know we have them
+# vs some platforms having curl and some wget etc. We don't need to test
+# for errors here because ultimately they will be caught by the cmp check
+
+READPGM="import requests
+r = requests.get(\"`cat $TMPFILE`\")
+f = open(\"$GIFFILE2\", \"wb\")
+bytes = r.content
+f.write(bytes)
+f.close()
+"
+
+$PYTHON -c "$READPGM"
+
+# above replaces this:
+#curl --silent `cat $TMPFILE` > $GIFFILE2
+
+# compare the photo with what we had set it to be
+cmp -l $GIFFILE $GIFFILE2
+if [ $? != 0 ]
+then 
+  echo "files do not compare"
+  # may as well keep going but note this failure of course
+  EXITSTATUS=1
+fi
+
+rm -f $GIFFILE $GIFFILE2
+
+# test photo deletion
+echo "TESTING::: $NR --delete -Pq $METRIC"
+$NR --delete -Pq $METRIC
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# photo URL should be None now
+echo "TESTING::: $NR -P $METRIC"
+
+$NR -P $METRIC > $TMPFILE
+# it should succeed but output should be None
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+P=`cat $TMPFILE`
+if [ "x$P" != "xNone" ]
+then
+  echo "Failed. Got: [$P]"
+fi
+
+# final output just print the stream
+echo "TESTING::: $NR -S $METRIC --- just expect a bunch of stream output"
+$NR -S $METRIC
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+
+#
+# create 200 comments just to make sure the chunked iterators work
+#
+
+if [ $QUICK = no ]
+then
+  echo "TESTING::: 200 x $NR -Iwq $METRIC commentNNN"
+
+  CMTS=""
+  for i in 0 1
+  do
+    for j in 0 1 2 3 4 5 6 7 8 9
+    do
+      CMTS="$CMTS cmt$i${j}0 cmt$i${j}1 cmt$i${j}2 cmt$i${j}3 cmt$i${j}4"
+      CMTS="$CMTS cmt$i${j}5 cmt$i${j}6 cmt$i${j}7 cmt$i${j}8 cmt$i${j}9"
+      $NR -wIq $METRIC cmt$i${j}0 $METRIC cmt$i${j}1 $METRIC cmt$i${j}2 $METRIC cmt$i${j}3 $METRIC cmt$i${j}4 $METRIC cmt$i${j}5 $METRIC cmt$i${j}6 $METRIC cmt$i${j}7 $METRIC cmt$i${j}8 $METRIC cmt$i${j}9 
+      if [ $? != 0 ]; then echo "failed"; exit 1; fi
+      #
+      # we shoot one of the comments on purpose to test the test code (!)
+      #
+      if [ $i = 0 ]
+      then
+        if [ $j = 3 ]
+        then
+          # shoot this comment
+          SHOTID=`$NR -I --limit 1 "${METRIC}[id]"`
+          echo "TESTING::: $NR --delete -I $METRIC $SHOTID"
+          $NR --delete -I $METRIC $SHOTID
+          if [ $? != 0 ]; then echo "failed"; exit 1; fi
+          SHOT="cmt039"     # XXX ugh, but easiest way
+        fi
+      fi
+    done
+  done
+
+  #
+  # every comment made should be in the stream now...
+  # ... except the one comment we shoot on purpose to test the test code!
+
+  $NR -S $METRIC > $TMPFILE
+
+  echo "TESTING::: verifying all those comments were stored correctly"
+  echo "TESTING::: using $NR -S $METRIC  (i.e., reading the stream)"
+
+  for m in $CMTS
+  do
+    grep -q $m $TMPFILE
+    if [ $? != 0 ]
+    then
+      if [ x"$m" != x"$SHOT" ]
+      then
+        echo "failed ... did not find $m in output"
+        EXITSTATUS=1
+      fi
+    else
+      # but this one is SUPPOSED to be missing
+      if [ x"$m" = x"$SHOT" ]
+      then
+        echo "failed ... still FOUND $m in output after deleting it"
+        EXITSTATUS=1
+      fi        
+    fi
+  done
+
+  echo "TESTING::: ALSO verifying via $NR -I $METRIC  (just interactions)"
+  $NR -I $METRIC > $TMPFILE
+
+  for m in $CMTS
+  do
+    grep -q $m $TMPFILE
+    if [ $? != 0 ]
+    then
+      if [ x"$m" != x"$SHOT" ]
+      then
+        echo "failed ... did not find $m in output"
+        EXITSTATUS=1
+      fi
+    else
+      # but this one is SUPPOSED to be missing
+      if [ x"$m" = x"$SHOT" ]
+      then
+        echo "failed ... still FOUND $m in output after deleting it"
+        EXITSTATUS=1
+      fi        
+    fi
+  done
+else
+  echo "QUICK::::: Skipping the creation of a gazillion comments"
+fi
+
+#
+# This next test makes sure the metrics collection iteration works right
+# To test that we have to make a whole lotta variables. So here goes.
+#
+# This part takes a while so it is skipped if you ask for QUICK mode
+#
+
+if [ $QUICK = no ]
+then
+  echo "INFO:::::: About to create many metrics; only some shown in output" 
+
+  for i in 0 1 2 3
+  do
+    for j in 0 1 2 3
+    do
+      for k in 0 1 2 3
+      do
+        M=DELETE-ME-XXX-DELETE-ME-$i$j$k
+        Mparams='{ "private" : true }'
+        if [ "$j$k" = "00" ]
+        then
+          echo "TESTING::: $NR -wM +$M $Mparams"
+        fi
+        $NR -wM +$M "$Mparams" > $TMPFILE
+        if [ $? != 0 ]
+        then
+          echo "FAILED:::: $NR -wM +$M $Mparams"
+          exit 1
+        else
+          DELETE_THESE="$DELETE_THESE `cat $TMPFILE`"
+        fi
+      done
+    done
+  done
+else
+  echo "QUICK::::: Skipping the creation/deletion of a gazillion metrics"
+fi
+
+# at this point it's a royal pain to exit early, so track it this way
+EXITSTATUS=0
+
+#
+# Get a list of metrics
+#
+echo "TESTING::: $NR     # point being testing the listing of metrics"
+$NR > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; EXITSTATUS=1; fi
+
+#
+# every variable we made should be in that output
+#
+for m in $DELETE_THESE 
+do
+  grep -q $m $TMPFILE
+  if [ $? != 0 ]
+  then
+    echo "failed ... did not find $m in output"
+    EXITSTATUS=1
+  fi
+done
+
+#
+# Now delete all the variables we created for this test
+#
+echo "INFO:::::: Deleting metrics."
+$NR -q --killmetric $DELETE_THESE
+if [ $? != 0 ]; then echo "Deleting failed, dunno why"; EXITSTATUS=1; fi
+
+rm -f $TMPFILE
+rm -f $GIFFILE
+exit $EXITSTATUS
