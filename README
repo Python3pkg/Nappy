@@ -12,6 +12,7 @@ DEPENDENCIES:
 INSTALLING/USING:
 
 Typically you install this in ~/lib (or somewhere in your PYTHONPATH).
+
 Here is a "hello world" example:
 
    from numerous import Numerous
@@ -23,4 +24,16 @@ Here is a "hello world" example:
    metric = nr.metric(MyMetric)
 
    print (metric.read())
+
+-------------------
+LANG / Unicode Note:
+-------------------
+
+Note: if your LANG is set to C locale (default on some systems) you may 
+see an ascii encoding exception from python when handling any metric names 
+that have Unicode characters in them (or "..." that shows up in some places)
+
+Set LANG appropriately, e.g.:
+
+     LANG=en_US.UTF-8   # or similar as appropriate
 
