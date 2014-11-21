@@ -443,7 +443,13 @@ GIFDATA="\\x47\\x49\\x46\\x38\\x39\\x61\\x01\\x00\\x01\\x00\\x80\\x00\\x00\\xff\
 GIFFILE=/tmp/g$$.gif
 GIFFILE2=/tmp/g2$$.gif
 
-$PYTHON -c "import sys; s=\"${GIFDATA}\"; sys.stdout.write(s)" > $GIFFILE
+GIFPGM="s = \"${GIFDATA}\"
+f = open(\"$GIFFILE\", \"wb\")
+f.write(b\"$GIFDATA\")
+f.close()
+"
+
+$PYTHON -c "$GIFPGM"
 
 # set the photo
 echo "TESTING::: $NR -wPq $METRIC $GIFFILE"
