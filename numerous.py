@@ -37,7 +37,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20141020.1"
+_NumerousClassVersionString = "20141126.1"
 
 #
 # metric object
@@ -436,6 +436,15 @@ class Numerous:
         }
     }
 
+    # most popular metrics
+    __APIInfo['popular'] = {
+        'endpoint' : '/v1/metrics/popular?count={count}',
+        'defaults' : { 
+            'count' : 10
+        }
+        # no entry needed for GET because no special codes etc
+    }
+
 
     #
     # This gathers all the relevant information for a given API
@@ -577,6 +586,12 @@ class Numerous:
         info = self.__APIInfo['subscriptions']
         api = self._makeAPIcontext(info, 'GET', userId=userId)
         return _Numerous_ChunkedAPIIter(self, api)
+
+    # return the most popular metrics (returns "count" of them; default 10)
+    def mostPopular(self, count=None):
+        info = self.__APIInfo['popular']
+        api = self._makeAPIcontext(info, 'GET', count=count)
+        return self._simpleAPI(api)
 
     # test/verify connectivity to the server
     def ping(self):
