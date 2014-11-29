@@ -461,13 +461,23 @@ echo "TESTING::: $NR -P $METRIC"
 $NR -P $METRIC > $TMPFILE
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
 
-echo "the URL is: `cat $TMPFILE`"
+PhotoURL="`cat $TMPFILE`"
 
-# get the photo... we use python/requests because we know we have them
-# vs some platforms having curl and some wget etc. We don't need to test
-# for errors here because ultimately they will be caught by the cmp check
+echo "the URL is: $PhotoURL"
 
-READPGM="import requests
+# at one point the Numerous server photo function was broken and that
+# caused the URL being None here even though it should be something else.
+# We check for that... may as well
+if [ "x$PhotoURL" = "xNone" ]
+then 
+  echo "Bad photo URL ... photo test skipped"
+  EXITSTATUS=1
+else
+  # get the photo... we use python/requests because we know we have them
+  # vs some platforms having curl and some wget etc. We don't need to test
+  # for errors here because ultimately they will be caught by the cmp check
+
+  READPGM="import requests
 r = requests.get(\"`cat $TMPFILE`\")
 f = open(\"$GIFFILE2\", \"wb\")
 bytes = r.content
@@ -475,26 +485,27 @@ f.write(bytes)
 f.close()
 "
 
-$PYTHON -c "$READPGM"
+  $PYTHON -c "$READPGM"
 
-# above replaces this:
-#curl --silent `cat $TMPFILE` > $GIFFILE2
+  # above replaces this:
+  #curl --silent `cat $TMPFILE` > $GIFFILE2
 
-# compare the photo with what we had set it to be
-cmp -l $GIFFILE $GIFFILE2
-if [ $? != 0 ]
-then 
-  echo "files do not compare"
-  # may as well keep going but note this failure of course
-  EXITSTATUS=1
+  # compare the photo with what we had set it to be
+  cmp -l $GIFFILE $GIFFILE2
+  if [ $? != 0 ]
+  then 
+    echo "files do not compare"
+    # may as well keep going but note this failure of course
+    EXITSTATUS=1
+  fi
+
+  # test photo deletion
+  echo "TESTING::: $NR --delete -Pq $METRIC"
+  $NR --delete -Pq $METRIC
+  if [ $? != 0 ]; then echo "failed"; exit 1; fi
 fi
 
 rm -f $GIFFILE $GIFFILE2
-
-# test photo deletion
-echo "TESTING::: $NR --delete -Pq $METRIC"
-$NR --delete -Pq $METRIC
-if [ $? != 0 ]; then echo "failed"; exit 1; fi
 
 # photo URL should be None now
 echo "TESTING::: $NR -P $METRIC"
