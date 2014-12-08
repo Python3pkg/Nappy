@@ -5,7 +5,7 @@
 #
 
 
-PATH=$HOME/bin:$HOME/bin:$PATH
+PATH=$HOME/bin:$PATH
 NR=nr
 PYTHON=python3
 TMPFILE=/tmp/$$
@@ -31,7 +31,9 @@ fi
 echo "Version under test:" `$NR -V`
 
 echo "TESTING::: $NR -k"
-APIKEY=`$NR -k`
+$NR -k > $TMPFILE
+if [ $? != 0 ]; then echo "No API key -- check NUMEROUSAPIKEY"; exit 1; fi
+APIKEY=`cat $TMPFILE`
 if [ "x$APIKEY" = x ]
 then
   echo "Testing -k .. failed"
@@ -107,14 +109,14 @@ if [ $? = 0 ]; then echo "failed"; exit 1; fi
 # TESTING comment using naked comment idiom
 C='this be the naked comment'
 echo "TESTING::: $NR -wIq $METRIC $C"
-$NR -wIq $METRIC 'this be the naked comment'
+$NR -wIq $METRIC "$C"
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
 
 # see if that comment is actually there now
-echo "TESTING::: $NR -I $METRIC"
-$NR -I $METRIC > $TMPFILE
+echo "TESTING::: $NR -I --limit 1 $METRIC[commentBody]"
+$NR -I --limit 1 "$METRIC[commentBody]" > $TMPFILE
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
-X=`head -1 $TMPFILE | sed -e 's/^.* -- //'`
+X=`cat $TMPFILE`
 if [ "x$X" != "x$C" ]; then echo "failed: $X"; exit 1; fi
 
 # AGAIN write the same value with -y, should "fail"
@@ -163,13 +165,18 @@ $NR -wIq $METRIC "$ErrInfo"
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
 
 
-# see if that error is actually there now and also test --limit
-echo "TESTING::: $NR -I --limit 1 $METRIC"
-$NR -I --limit 1 $METRIC > $TMPFILE
+# see if that error is actually there now
+echo "TESTING::: $NR -I --limit 1 $METRIC[kind]"
+$NR -I --limit 1 "$METRIC[kind]" > $TMPFILE
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
-X=`sed -e 's/^.* -- //' $TMPFILE`
-if [ "x$X" != "x$ErrString" ]; then echo "failed: $X"; exit 1; fi
+X=`cat $TMPFILE`
+if [ "x$X" != "xerror" ]; then echo "failed: got /$X/ wanted /error/"; exit 1; fi
 
+echo "TESTING::: $NR -I --limit 1 $METRIC[commentBody]"
+$NR -I --limit 1 "$METRIC[commentBody]" > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+X=`cat $TMPFILE`
+if [ "x$X" != "x$ErrString" ]; then echo "failed: $X"; exit 1; fi
 
 # test updating a metric's description
 Desc="This is the metric's porpoise in life"
@@ -335,13 +342,11 @@ echo "TESTING::: $NR -wIq $METRIC '{ \"kind\": \"like\" }'"
 $NR -wIq $METRIC '{ "kind": "like" }'
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
 
-# see if the Like is actually there now ... implicitly also 
-# tests reading interactions and the limit function
-echo "TESTING::: $NR -I $METRIC"
-$NR -I $METRIC --limit 1 > $TMPFILE
+# see if the Like is actually there now 
+echo "TESTING::: $NR -I --limit 1 $METRIC[kind]"
+$NR -I --limit 1 "$METRIC[kind]" > $TMPFILE
 if [ $? != 0 ]; then echo "failed"; exit 1; fi
-
-X=`sed -e 's/^like [0-9]* None.*/like/' < $TMPFILE`
+X=`cat $TMPFILE`
 if [ "x$X" != "xlike" ]; then echo "failed: $X"; exit 1; fi
 
 
