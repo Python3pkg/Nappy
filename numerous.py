@@ -14,13 +14,10 @@
 # This code is written and maintained for python3.
 #
 # PYTHON2:
-# At one point I backported the code to python2 via (only) two hacks:
-#     - the try/except for importing http.client vs httplib
-#       (this import itself is only needed to enable the debug() method)
-#     - added a next() method (calls __next__) to the iterator class
-#
-# With those changes the code passed my test suite (as of Oct2014).
-# However, I do not continue to test this code on python2. Caveat User.
+# I backported to python2 (only needed two minor hacks); it works. 
+# I primarily develop/maintain this code using python3 but I do keep 
+# running my test script against python2 as well. 
+# It should work but: Caveat User.
 #
 # #################
 
@@ -37,7 +34,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20141126.1"
+_NumerousClassVersionString = "20141126.2"
 
 #
 # metric object
