@@ -14,10 +14,26 @@ EXITSTATUS=0
 
 QUICK=no
 
-if [ "x$1" = "x-Q" ]
-then
-  QUICK=yes
-fi
+#
+# OPTIONS
+#    -Q skips some of the slower tests ("quick")
+#    -X invokes the nr program as nrX. I use this for testing.
+#
+
+while [ $# -gt 0 ]
+do
+  case "x$1" in
+    x-Q)
+      QUICK=yes
+      shift
+      ;;
+ 
+    x-X)
+      NR=nrX
+      shift
+      ;;
+  esac
+done
 
 #
 # Test the -k function first of all
@@ -226,6 +242,28 @@ then
   echo "failed: units got clobbered"
   exit 1
 fi
+
+# make a "timer" metric to bang on
+TMR=nrTMRTEST$$
+TMRparams='{ "private" : true, "kind" : "timer" }'
+
+echo "TESTING::: $NR -wM +$TMR $TMRparams"
+$NR -wM +$TMR "$TMRparams" > $TMPFILE
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+TMETRIC=`cat $TMPFILE`
+
+echo "CREATED::: $TMETRIC"
+
+DELETE_THESE="$DELETE_THESE $TMETRIC"
+
+# set it to a particular date
+$NR -wq $TMETRIC "EPOCHTIME: 1/15/2011"   # nephew's birthday :)
+if [ $? != 0 ]; then echo "failed"; exit 1; fi
+
+# I don't really have a good way to test that the date got set correctly.
+# Well, I could, but I'm too lazy to write all that shell code. So we're
+# just happy here if the date conversion above didn't blow up. Declare victory.
 
 # make another "virgin" metric to bang on
 VGM=nrVGTEST$$

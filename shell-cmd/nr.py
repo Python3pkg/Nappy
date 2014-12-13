@@ -5,6 +5,7 @@ import sys
 import os
 import argparse
 import string
+import time
 from numerous import Numerous, NumerousError, \
                      NumerousAuthError, NumerousMetricConflictError
 
@@ -122,6 +123,14 @@ from numerous import Numerous, NumerousError, \
 # This flag is an error if used on anything other than a metric value write.
 # NOTE: This is NOT atomic at the server as of Oct2014 and the Numerous
 #       people say they aren't sure they can ever make it so
+#
+# If you are writing a metric value and you format the "value" like this:
+#            "EPOCHTIME: mm/dd/yy hh:mm:ss"
+#             (double quotes are not part of the format; I'm merely
+#              pointing out the argument must be one "word")
+# then the value written to the metric will be the given date converted
+# into epochtime (UNIX "seconds since 1970"). This is what you want when
+# updating a "timer" type of metric.
 #
 # Without -w:
 #      -B (--subscriptions) : subscriptions will be read.
@@ -516,25 +525,68 @@ except NumerousAuthError:
     exit(1)
 
 #
-# The Numerous API server sometimes (for some APIs not others) requires
-# that the 'value' in a JSON be a naked value (not a string representation
-# of that value). This function de-strings anything that looks like a number.
+# This function takes a string that *MIGHT* be a numeric value and
+# converts it to a number, or just returns it. This is used for two reasons:
 #
-def valueToNumberMaybe(s):
-    r = s
+#   1) The Numerous server insists (quite reasonably so) that numeric values 
+#      come across as JSON numbers (17), not as strings ("17"). It turns out
+#      the server only enforces that on some APIs and not others; but
+#      we choose to be conservative in what we send regardless.
+#
+#   2) Implement syntax for certain special circumstances. Right now the
+#      only special syntax is "EPOCHTIME: mm/dd/yy hh:mm:ss" which will
+#      be converted into a UNIX epochtime (useful for "timer" metrics)
+#
 
+def valueParser(s):
+    r = s                # default result is just the source
+
+    # is it just a naked integer?
     try:
         r = int(s)
         return r
     except ValueError:
         pass
 
+    # is it just a naked float?
     try:
         r = float(s)
         return r
     except ValueError:
         pass
 
+
+    # is it the EPOCHTIME: syntax?
+    EpochTimeSyntax = "EPOCHTIME: "
+    if s.startswith(EpochTimeSyntax):
+        sx = s[len(EpochTimeSyntax):]    # the rest of s
+
+        # these are all the formats we'll try for converting a date stamp
+        # personally I don't recommend you use the ones omitting the full
+        # time but it's up to you
+        dateformats = [
+             "%m/%d/%Y %H:%M:%S",          # four digit year
+             "%m/%d/%y %H:%M:%S",          # two digit year
+             "%m/%d/%Y %H:%M",             # seconds omitted (yyyy)
+             "%m/%d/%y %H:%M",             # (yy)
+             "%m/%d/%Y",                   # time completely omitted (yyyy)
+             "%m/%d/%y"
+        ]
+
+        # try first mm/dd/yyyy then mm/dd/yy .. could add more formats too
+        for fmt in dateformats:
+            try:
+                r = float(time.strftime("%s", time.strptime(sx, fmt)))
+                return r
+            except:
+                pass
+
+        # but if we get all the way to here we know the value
+        # started with the EpochTimeSyntax but did not parse.
+        # throw an exception because of that.
+        raise ValueError
+
+    # fell through all the syntax possibilities so just return original
     return r
 
 
@@ -841,7 +893,7 @@ while len(metrics):
                 exit(1)
         except (TypeError, ValueError):
             # it was naked, or malformed.
-            jval = { '__naked__' : valueToNumberMaybe(val) }
+            jval = { '__naked__' : valueParser(val) }
 
         if args.interaction:
             # interactions are comments/likes/errors
@@ -892,7 +944,7 @@ while len(metrics):
 
         else:
             # we are writing a metric value
-            val = valueToNumberMaybe(val)
+            val = valueParser(val)
 
             try:
                 r['result'] = metric.write(val, 
