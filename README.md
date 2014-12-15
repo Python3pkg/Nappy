@@ -34,9 +34,12 @@ for j in metric.stream():
 You must have the **requests** library installed ("pip install requests").
 
 ## Installing
-This is not yet integrated into pip (that's next). For now just download numerous.py and copy it into your python library directory. 
 
-I use ~/lib and set my PYTHONPATH but of course you can also copy it into the (system-dependent) library location.
+This package is available on pip:
+
+   pip install numerous
+
+Alternatively, you can just copy numerous.py into a directory on your PYTHONPATH (system dependent main library location or you can put it in ~/lib and set your PYTHONPATH appropriately).
 
 If you want to use the shell command **nr** download that (and **nr.py**) and install it in your ~/bin and be sure to set the PYTHONPATH appropriately (see **nr** script itself)
 
