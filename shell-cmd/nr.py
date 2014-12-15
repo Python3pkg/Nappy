@@ -893,7 +893,10 @@ while len(metrics):
                 exit(1)
         except (TypeError, ValueError):
             # it was naked, or malformed.
-            jval = { '__naked__' : valueParser(val) }
+            try:
+                jval = { '__naked__' : valueParser(val) }
+            except ValueError:     # e.g., "EPOCHTIME: " bad format
+                jval = { '__naked__' : val }  # this will get dealt with below
 
         if args.interaction:
             # interactions are comments/likes/errors
@@ -944,21 +947,26 @@ while len(metrics):
 
         else:
             # we are writing a metric value
-            val = valueParser(val)
-
             try:
-                r['result'] = metric.write(val, 
-                                           onlyIf = args.onlyIf, 
-                                           add = args.plus,
-                                           dictionary = args.json)
-            except NumerousMetricConflictError as e:
+                val = valueParser(val)
+                try:
+                    r['result'] = metric.write(val, 
+                                               onlyIf = args.onlyIf, 
+                                               add = args.plus,
+                                               dictionary = args.json)
+                except NumerousMetricConflictError as e:
+                    exitStatus = 1
+                    if args.json:
+                        r['result'] = { 'errorCode' : e.code,
+                                        'errorDetails' : e.details,
+                                        'errorReason' : e.reason }
+                    else:
+                        r['result'] = "NoChange"
+
+            except ValueError: 
                 exitStatus = 1
-                if args.json:
-                    r['result'] = { 'errorCode' : e.code,
-                                    'errorDetails' : e.details,
-                                    'errorReason' : e.reason }
-                else:
-                    r['result'] = "NoChange"
+                r['result'] = "Bad value syntax: '{}'".format(val)
+
 
     elif args.killmetric:
         try:
