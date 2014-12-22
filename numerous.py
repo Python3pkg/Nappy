@@ -54,7 +54,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20141126.2"
+_NumerousClassVersionString = "20141222.1"
 
 #
 # metric object
@@ -83,7 +83,7 @@ class NumerousMetric:
         }
     }
 
-    # GET or POST or DELETE events of a metric
+    # GET or POST events collection of a metric
     __APIInfo['events'] = {
         'endpoint' : '/v1/metrics/{metricId}/events',
         'GET' : {
@@ -92,14 +92,16 @@ class NumerousMetric:
         },
         'POST' : {
             'success-codes' : [ 201 ]
-        },
-        'DELETE' : {
-            'append-endpoint' : '/{eventID}',
-            'success-codes' : [ 204 ]     # No Content is the expected return
         }
     }
 
-    # GET or POST or DELETE interactions of a metric
+    # GET or DELETE an individual event
+    __APIInfo['event'] = {
+        'endpoint' : '/v1/metrics/{metricId}/events/{eventID}',
+        'DELETE' : { 'success-codes' : [ 204 ] }
+    }
+
+    # GET or POST interactions collection of a metric
     __APIInfo['interactions'] = {
         'endpoint' : '/v2/metrics/{metricId}/interactions',
         'GET' : {
@@ -108,11 +110,13 @@ class NumerousMetric:
         },
         'POST' : {
             'success-codes' : [ 201 ]
-        },
-        'DELETE' : {
-            'append-endpoint' : '/{item}',
-            'success-codes' : [ 204 ]     # No Content is the expected return
         }
+    }
+
+    # GET or DELETE an individual interaction
+    __APIInfo['interaction'] = {
+        'endpoint' : '/v2/metrics/{metricId}/interactions/{item}',
+        'DELETE' : { 'success-codes' : [ 204 ] }
     }
 
     # subscriptions collection
@@ -348,13 +352,23 @@ class NumerousMetric:
         v = self.nr._simpleAPI(api)
         # there is no return value
 
+    # get an individual event by ID
+    def event(self, evID):
+        api = self.__getAPI('event', 'GET', eventID=evID)
+        return self.nr._simpleAPI(api)
+
     def eventDelete(self, evID):
-        api = self.__getAPI('events', 'DELETE', eventID=evID)
+        api = self.__getAPI('event', 'DELETE', eventID=evID)
         v = self.nr._simpleAPI(api)
         # there is no return value
 
+    # get an individual interaction by ID
+    def interaction(self, interID):
+        api = self.__getAPI('interaction', 'GET', item=interID)
+        return self.nr._simpleAPI(api)
+
     def interactionDelete(self, interID):
-        api = self.__getAPI('interactions', 'DELETE', item=interID)
+        api = self.__getAPI('interaction', 'DELETE', item=interID)
         v = self.nr._simpleAPI(api)
         # there is no return value
 

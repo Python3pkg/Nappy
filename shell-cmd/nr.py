@@ -141,9 +141,14 @@ from numerous import Numerous, NumerousError, \
 #
 #      -E (--event) : the events will be read. 
 #         Events are value changes.
+#         You can read a SINGLE event by ID using the field notation:
+#                -E 7834758745[245235235]   
+#         (metric ID and [eventID]) and you can use -n notation for the metricID:
+#                -E metname[245235235]   
 #
 #      -I (--interaction) : interactions will be read. 
 #         Interactions are everything other than value changes
+#         You can read a SINGLE interaction by ID using the field notation
 #
 #      -S (--stream) : the stream will be read
 #         The stream is events and interactions together
@@ -248,11 +253,11 @@ from numerous import Numerous, NumerousError, \
 # You can use -I to send any valid type of interaction. So, for example:
 #
 #   ERROR:
-#       nr -wI -n XYZ '{ "kind": "error", "commentBody": "error stuff" }'
+#       nr -wI 53349538495834 '{ "kind": "error", "commentBody": "error stuff" }'
 #       (note that numerous uses commentBody for error details too)
 #
 #   LIKE: 
-#       nr -wI -n XYZ '{ "kind": "like" }'
+#       nr -wI 53349538495834 '{ "kind": "like" }'
 #
 #   CREATE: create a metric
 #       nr -wM +NewM1 '{}' +NewM2 '{ "value" : 17, "private" : true }'
@@ -623,6 +628,16 @@ def translateNames(nr, names):
     return r
 
 #
+# FIELD notation is overloaded to either by an actual field
+#       name (e.g., 'label', 'authorId', etc) or sometimes it
+#       is a raw event or interaction ID and we need to know difference
+# Arguably, this is a silly hack and we should have made more explicit
+# command-line argument syntax to distinguish the two. But we're on a roll.
+#
+def isEventOrInteractionId(s):
+    return s.isdigit()
+
+#
 # support function for the metric[field] concept
 # Given a dictionary (usually a Numerous result) and a field name that 
 # is (supposedly) either in that dictionary OR in a subdictionary, 
@@ -673,7 +688,7 @@ def printStreamResults(items, fld):
         print(items)             # these are error messages
     else:
         for i in items:
-            if fld:
+            if fld and not isEventOrInteractionId(fld):
                 print(i.get(fld,None))
             else:
                 c = i.get('commentBody', None)
@@ -687,7 +702,7 @@ def printEventResults(r, fld):
         print(r)                 # these are error messages
     else:
         for i in r:
-            if fld:
+            if fld and not isEventOrInteractionId(fld):
                 print(i.get(fld,None))
             else:
                 print(i['value'],"@",i['updated'],"by",i['authorId'])
@@ -976,16 +991,24 @@ while len(metrics):
             r['result'] = "FAILED " + e.reason
 
     elif args.interaction:
-        iterable = metric.interactions()
-        r['result'] = getIterableStuff(metric, iterable, args.limit)
+        if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
+            r['result'] = [ metric.interaction(r['FIELD']) ]
+        else:
+            iterable = metric.interactions()
+            r['result'] = getIterableStuff(metric, iterable, args.limit)
 
     elif args.stream:
+        # no support for reading a single stream item
+        # (read a single item using the interaction/event interfaces)
         iterable = metric.stream()
         r['result'] = getIterableStuff(metric, iterable, args.limit)
 
     elif args.event:
-        iterable = metric.events()
-        r['result'] = getIterableStuff(metric, iterable, args.limit)
+        if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
+            r['result'] = [ metric.event(r['FIELD']) ]
+        else:
+            iterable = metric.events()
+            r['result'] = getIterableStuff(metric, iterable, args.limit)
 
     elif args.photo:
         r['result'] = metric.photoURL()
