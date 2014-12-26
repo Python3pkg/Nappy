@@ -155,7 +155,10 @@ from numerous import Numerous, NumerousError, \
 #
 #      -P (--photo) : the URL for the photo will be displayed
 #
-#      -U Your user info will be read
+#      -U If no other arguments given, your user info will be read
+#         With arguments ("m1" values though they aren't metrics) then
+#         the user info for those ID(s) will be read. Field selection works
+#         or the entire thing is displayed in JSON.
 #
 # When writing something, the m1/v1... command line arguments
 # should be metric/value pairs. They will be written (plain -w) or 
@@ -1012,6 +1015,13 @@ while len(metrics):
 
     elif args.photo:
         r['result'] = metric.photoURL()
+
+    elif args.user:
+        u = nrServer.user(r['ID'])
+        if 'FIELD' in r:
+            r['result'] = u[r['FIELD']]
+        else:
+            r['result'] = u
 
     elif args.subs:
         try:
