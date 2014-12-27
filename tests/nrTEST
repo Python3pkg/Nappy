@@ -299,18 +299,18 @@ done
 
 
 
-# fire off 10 add +1 operations in parallel
-#
-# XXX there is a bug (acknowledged by Numerous) and the ADD operations
-#     are not currently atomic. So rather than reporting that as a failure
-#     what we're going to do here is simply report whether they behaved
-#     atomically or not.
+# fire off 30 add +1 operations in parallel.
+# They are supposed to operate atomically (they didn't in the past
+# but that was a server bug and is now fixed)
 
-echo "TESTING::: 10 x $NR -w+q $METRIC 1 -- in parallel"
+echo "TESTING::: 30 x $NR -w+q $METRIC 1 -- in parallel"
 $NR -wq $METRIC 0
 for i in 0 1 2 3 4 5 6 7 8 9
 do
-  $NR -w+q $METRIC 1 &
+  # we actually do 10x invocations of NR that each do three updates
+  # this seems to increase *effective* parallism at the server though
+  # obviously a lot depends on timing and speed of the client machine
+  $NR -w+q $METRIC 1 $METRIC 1 $METRIC 1 &
 done
 
 wait 
@@ -318,9 +318,10 @@ wait
 $NR $METRIC > $TMPFILE
 if [ $? != 0 ]; then echo "failed: cannot read back"; exit 1; fi
 X=`cat $TMPFILE`
-if [ "x$X" != "x10" ]
+if [ "x$X" != "x30" ]
 then
-  echo "**FYI**::: Numerous server did not process ADDs atomically"
+  echo "FAILURE: Numerous server did not process ADDs atomically"
+  exit 1
 fi
 
 # fire off 40 "onlyIfChanged" operations in parallel
@@ -328,7 +329,7 @@ fi
 # XXX The server isn't necessarily atomic in this operation. It turns out
 #     that depending on the speed of the system this is running on 40
 #     instances might not be enough to reveal that. In an attempt to make
-#     it more likely, the sleep 3 seconds hack hopes to get all of these
+#     it more likely, the sleep 5 seconds hack hopes to get all of these
 #     forked off in parallel before they try to start things.
 #
 
@@ -341,7 +342,7 @@ then
   do
     for i in 0 1 2 3 4 5 6 7 8 9
     do
-      (sleep 3; $NR -wy $METRIC $$ > $TMPFILE.$j$i) &
+      (sleep 5; $NR -wy $METRIC $$ > $TMPFILE.$j$i) &
     done
   done
 

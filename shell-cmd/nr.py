@@ -74,13 +74,7 @@ from numerous import Numerous, NumerousError, \
 # either metric value itself, or with another option:
 #
 #     -+ (--plus) : the metric value will be ADDED to 
-#
-#        XXX PLEASE NOTE XXX as of this writing (sep 2014) the Numerous server
-#            does not implement this atomically. It has the same semantics
-#            as if you manually read the variable and wrote it in two
-#            separate operations; parallel updates can step on each other
-#        XXX BUT it *is* a bug and they are going to fix it
-#
+#        FYI: implemented atomically by the NumerousApp server
 #     -E (--event) : an event is written ... equivalent to naked -w
 #     -I (--interaction) : an interaction (comment/like/error) will be written
 #     -P (--photo) : a photo is attached to the metric. value1 MUST
