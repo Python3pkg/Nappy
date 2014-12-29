@@ -324,25 +324,52 @@ then
   exit 1
 fi
 
-# fire off 40 "onlyIfChanged" operations in parallel
+# fire off 50 "onlyIfChanged" operations in parallel
 # only one of them should change the variable, the rest should be "NoChange"
-# XXX The server isn't necessarily atomic in this operation. It turns out
-#     that depending on the speed of the system this is running on 40
-#     instances might not be enough to reveal that. In an attempt to make
-#     it more likely, the sleep 5 seconds hack hopes to get all of these
-#     forked off in parallel before they try to start things.
 #
+# XXX the server does implement these atomically, so I've never been
+#     able to verify whether this would expose any atomicity error.
+
+TPGM="import numerous
+import datetime
+import time
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric(\"$METRIC\")
+
+# wait for the top of the minute
+while True:
+  now = datetime.datetime.now()
+  if now.second == 0:
+    break
+  else:
+    time.sleep(1)
+
+# and then busy-wait to 10 second mark -- hopefully this will sync everyone
+while True:
+  now = datetime.datetime.now()
+  if now.second == 10:
+    break
+
+r = 'Changed'
+try:
+  metric.write(1, onlyIf=True)
+except numerous.NumerousMetricConflictError:
+  r = 'NoChange'
+print (r)
+"
 
 if [ $QUICK = no ]
 then
 
-  echo "TESTING::: 40 x $NR -wy $METRIC $$ -- in parallel"
+  NTIMES=50    # XXX you have to update the for loops to match
+
+  echo "TESTING::: $NTIMES x $NR -wy $METRIC $$ -- in parallel"
   $NR -wq $METRIC 0
-  for j in 0 1 2 3
+  for j in 0 1 2 3 4
   do
     for i in 0 1 2 3 4 5 6 7 8 9
     do
-      (sleep 5; $NR -wy $METRIC $$ > $TMPFILE.$j$i) &
+      $PYTHON -c "$TPGM" > $TMPFILE.$j$i &
     done
   done
 
@@ -350,7 +377,7 @@ then
 
   rm $TMPFILE
   touch $TMPFILE
-  for j in 0 1 2 3
+  for j in 0 1 2 3 4
   do
     for i in 0 1 2 3 4 5 6 7 8 9
     do
@@ -361,12 +388,12 @@ then
     done
   done
 
-  # There should be 39 "NoChange" entries and only one entry that changed it
+  # There should be NTIMES - 1 "NoChange" entries and only one that changed it
   X=`grep NoChange $TMPFILE | wc -l`
 
-  if [ $X -ne 39 ]
+  if [ $X -ne `$PYTHON -c "print($NTIMES - 1)"` ]
   then
-    Y=`python -c "print(40 - $X)"`
+    Y=`$PYTHON -c "print($NTIMES - $X)"`
     echo "The onlyIfChanged operation is not atomic. It changed $Y times."
     echo "Details of log file follow: - - - - - - - - - -"
     cat $TMPFILE
