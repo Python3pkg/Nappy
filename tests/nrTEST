@@ -330,75 +330,144 @@ fi
 # XXX the server does implement these atomically, so I've never been
 #     able to verify whether this would expose any atomicity error.
 
-TPGM="import numerous
-import datetime
+# another version of the numerous server atomicity test
+yatom() {
+
+    #
+    # fire off 50 "onlyIfChanged" operations in parallel
+    # only one of them should change it, the rest should be "NoChange"
+    #
+
+    # note the use of files to attempt to synchronize all of these.
+    # it can take a while for them all to get forked and situated
+
+
+    TPGM="import argparse
 import time
+import numerous
+
 nr = numerous.Numerous(apiKey=\"$APIKEY\")
 metric = nr.metric(\"$METRIC\")
 
-# wait for the top of the minute
-while True:
-  now = datetime.datetime.now()
-  if now.second == 0:
-    break
-  else:
-    time.sleep(1)
+# force libs to load
+try:
+  ignored = metric.write(metric.read(), onlyIf=True)
+except numerous.NumerousMetricConflictError:
+  pass
 
-# and then busy-wait to 10 second mark -- hopefully this will sync everyone
-while True:
-  now = datetime.datetime.now()
-  if now.second == 10:
-    break
 
+parser = argparse.ArgumentParser()
+parser.add_argument('readyfile', nargs=1)
+parser.add_argument('gofile1', nargs=1)
+parser.add_argument('gofile2', nargs=1)
+
+args = parser.parse_args()
+
+# tell the world we ready
+f = open(args.readyfile[0],'w+')
+
+# the first loop doesn't fully busy-wait so everyone can get started
+while True:
+  try:
+    g = open(args.gofile1[0])
+    break
+  except IOError:
+    time.sleep(2)
+
+# so after you make the gofile1 you should wait more than 2 seconds
+# (my test program waits 15 seconds) then make gofile2
+while True:
+  try:
+    g = open(args.gofile2[0])
+    break
+  except IOError:
+    pass
+
+# and off we go!!!
 r = 'Changed'
 try:
-  metric.write(1, onlyIf=True)
+  metric.write(100, onlyIf=True)
 except numerous.NumerousMetricConflictError:
   r = 'NoChange'
 print (r)
 "
 
+    NTIMES=50    # XXX you have to update the for loops to match
+
+    $NR -wq $METRIC 0
+
+    # get the ID of that event so we can delete it later if successful
+    ZID=`$NR -E --limit 1 $METRIC'[id]'`
+    RFILEPFX=$TMPFILE.RFX
+    mkdir $RFILEPFX
+    RFX="RFXRFXRFX"
+
+    G1=$TMPFILE.GO.1
+    G2=$TMPFILE.GO.2
+
+    for j in 0 1 2 3 4
+    do
+      for i in 0 1 2 3 4 5 6 7 8 9
+      do
+        $PYTHON -c "$TPGM" $RFILEPFX/$RFX$j$i $G1 $G2 > $TMPFILE.$j$i &
+      done
+    done
+
+    # now wait for all of the programs to indicate they are ready
+    while :
+    do
+        NREADY=`ls -l $RFILEPFX | grep $RFX | wc -l`
+	if [ $NREADY -eq $NTIMES ]
+	then
+	    break
+	fi
+        sleep 2
+    done
+
+    # make the first go file to get them all busy waiting
+    touch $G1
+
+    # give them a chance to all start busy-waiting
+    sleep 15
+
+    # off to the races!
+    touch $G2
+    wait
+
+    rm $G1 $G2
+    rm -rf $RFILEPFX
+
+    rm -f $TMPFILE
+    touch $TMPFILE
+
+    for j in 0 1 2 3 4
+    do
+      for i in 0 1 2 3 4 5 6 7 8 9
+      do
+        echo Results from: $j$i >> $TMPFILE
+        cat $TMPFILE.$j$i >> $TMPFILE
+        rm -f $TMPFILE.$j$i
+        echo " - - - " >> $TMPFILE
+      done
+    done
+
+    # There should be NTIMES - 1 "NoChange" entries and only one that changed it
+    X=`grep NoChange $TMPFILE | wc -l`
+    if [ $X -ne `$PYTHON -c "print($NTIMES - 1)"` ]
+    then
+      Y=`$PYTHON -c "print($NTIMES - $X)"`
+      echo "The onlyIfChanged operation is not atomic. It changed $Y times."
+      echo "Details of log file follow: - - - - - - - - - -"
+      cat $TMPFILE
+      echo "end of log file - - - - - - - - -"
+      EXITSTATUS=1
+    fi
+}
+
 if [ $QUICK = no ]
 then
-
-  NTIMES=50    # XXX you have to update the for loops to match
-
-  echo "TESTING::: $NTIMES x $NR -wy $METRIC $$ -- in parallel"
-  $NR -wq $METRIC 0
-  for j in 0 1 2 3 4
-  do
-    for i in 0 1 2 3 4 5 6 7 8 9
-    do
-      $PYTHON -c "$TPGM" > $TMPFILE.$j$i &
-    done
-  done
-
-  wait 
-
-  rm $TMPFILE
-  touch $TMPFILE
-  for j in 0 1 2 3 4
-  do
-    for i in 0 1 2 3 4 5 6 7 8 9
-    do
-      echo Results from: $j$i >> $TMPFILE
-      cat $TMPFILE.$j$i >> $TMPFILE
-      rm -f $TMPFILE.$j$i
-      echo " - - - " >> $TMPFILE
-    done
-  done
-
-  # There should be NTIMES - 1 "NoChange" entries and only one that changed it
-  X=`grep NoChange $TMPFILE | wc -l`
-
-  if [ $X -ne `$PYTHON -c "print($NTIMES - 1)"` ]
-  then
-    Y=`$PYTHON -c "print($NTIMES - $X)"`
-    echo "The onlyIfChanged operation is not atomic. It changed $Y times."
-    echo "Details of log file follow: - - - - - - - - - -"
-    cat $TMPFILE
-    echo "end of log file - - - - - - - - -"
-  fi
+  echo "TESTING::: many parallel onlyIfChanged updates - atomicity test"
+  yatom
 else
   echo "QUICK::::: Skipping test of parallel onlyIf updates"
 fi
