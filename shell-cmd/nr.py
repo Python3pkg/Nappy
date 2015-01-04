@@ -128,10 +128,15 @@ from numerous import Numerous, NumerousError, \
 #
 # Without -w:
 #      -B (--subscriptions) : subscriptions will be read.
-#         If no metric IDs are given your entire set of subscriptions
-#         will be read. Otherwise the subscription parameters on a particular
-#         metric(s) are read. NOTE: It is not currently possible to write
-#         subscriptions from this command (not yet implemented)
+#         * If no metric IDs are given your entire set of subscriptions
+#           will be read. 
+#         * As a special case, -Bn and no metric IDs will simply display a list
+#           of metricID and name. This is useful for finding the metric IDs of all 
+#           the metrics you are subscribed to (have put into your display) in the App.
+#
+#         * Otherwise the subscription parameters on a particular
+#           metric(s) are read. NOTE: It is not currently possible to write
+#           subscriptions from this command (not yet implemented)
 #
 #      -E (--event) : the events will be read. 
 #         Events are value changes.
@@ -799,17 +804,15 @@ exitStatus = 0
 if len(metrics) == 0:
     if args.subs:
         for s in nrServer.subscriptions():
-            # this is a hack but if you specify -n we'll stick the label
-            # name into the subscription info for you... this way...
-            if args.name:
-                m = nrServer.metric(s['metricId'])
-                v = m.read(dictionary=True)
-                s['label'] = v['label']
-
-            # arguably "quiet" is dumb, but it does test the functionality
-            if not args.quiet:
-                print(s)
-                print(" ")
+            # this is a hack but if you specify -n we just display
+            # the metric ID and the name this way
+            if not args.quiet:               # quiet is dumb, but whatever
+                if args.name:
+                    id = s['metricId']
+                    print("{} {}".format(id, nrServer.metric(id).label()))
+                else:
+                    print(s)
+                    print(" ")
     elif args.user:
         u = nrServer.user()
         if not args.quiet:
