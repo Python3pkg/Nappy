@@ -54,7 +54,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20141222.1"
+_NumerousClassVersionString = "20150105.dedupe-xxx"
 
 #
 # metric object
@@ -79,7 +79,8 @@ class NumerousMetric:
         'endpoint' : '/v2/metrics/{metricId}/stream',
         'GET' : {
             'next' : 'next',
-            'list' : 'items'
+            'list' : 'items',
+            'dupFilter' : 'id'
         }
     }
 
@@ -88,7 +89,8 @@ class NumerousMetric:
         'endpoint' : '/v1/metrics/{metricId}/events',
         'GET' : {
             'next' : 'nextURL',
-            'list' : 'events'
+            'list' : 'events',
+            'dupFilter' : 'id'
         },
         'POST' : {
             'success-codes' : [ 201 ]
@@ -106,7 +108,8 @@ class NumerousMetric:
         'endpoint' : '/v2/metrics/{metricId}/interactions',
         'GET' : {
             'next' : 'nextURL',
-            'list' : 'interactions'
+            'list' : 'interactions',
+            'dupFilter' : 'id'
         },
         'POST' : {
             'success-codes' : [ 201 ]
@@ -543,7 +546,16 @@ class Numerous:
 
         myVersion = "NW-Python-NumerousClass/" + _NumerousClassVersionString
         self.agentString = myVersion + " " + pyV + " NumerousAPI/v2"
+        self._filterDuplicates = True    # see discussion elsewhere
 
+
+    # XXX This is primarily for testing; control filtering of bogus duplicates
+    #     If you are calling this you are probably doing something wrong.
+    def _setBogusDupFilter(self, f):
+        prev = self._filterDuplicates
+        self._filterDuplicates = f
+
+    # control debugging level
     def debug(self, lvl=1):
         prev = self.__debug
         self.__debug = lvl
@@ -790,6 +802,13 @@ class _Numerous_ChunkedAPIIter:
         self.__list = []
         self.__nextURL = apiOP['base-url']
 
+        # see discussion about duplicate filtering elsewhere
+        self.__dupfilter = None
+        if nr._filterDuplicates:
+            # only set it up for the APIs where it's needed ('dupFilter' tells us)
+            if 'dupFilter' in apiOP:  # no dupFilter implies no dup filtering needed
+                self.__dupfilter = { 'prev' : {}, 'current' : {} }
+
     def __iter__(self):
         return self
  
@@ -800,7 +819,60 @@ class _Numerous_ChunkedAPIIter:
     def next(self):
         return self.__next__()
 
+
+
+    # Get the next item - the main work is done in getNextOne and this
+    # wrapper implements the duplicate filtering as needed.
+    #
+    # A note about duplicate filtering, _filterDuplicates, etc.
+    #
+    # There is a bug in the NumerousApp server which can cause collections
+    # to show duplicates of certain events (or interactions/stream items).
+    # Explaining the bug in great detail is beyond the scope here; suffice
+    # to say it only happens for events that were recorded nearly-simultaneously
+    # and happen to be getting reported right at a chunking boundary.
+    #
+    # The ChunkedAPIIter code filters out these bogus duplicates by default.
+    # Each time it is about to return an item it checks to see if it returned
+    # that same item previously (dupFilter['prev']). If it has, it skips that
+    # duplicate one and gets another (and another, and another... as needed).
+    #
+    # Pragmatically it seems extremely unlikely that duplicates could span
+    # multiple chunks. The chunk size is 100 and the most duplicates I've been
+    # able to artificially manufacture with test cases is 4. The server simply
+    # can't process that many "simultaneous" updates on the writing side (where
+    # the condition for the duplicates appearing in the result stream gets created).
+    #
+    # Because event streams certainly CAN (and DO) grow to be quite large, I was
+    # concerned about the overall O[] cost of this filtering. Therefore, the code
+    # only keeps track of the "previous" and "current" IDs based on chunk boundaries.
+    # This puts an upper bound on the cost of the algorithm for large event
+    # streams - the cost tops out based on the chunk size not the total stream size.
+    # As long as there are never more than 100 adjacent duplicates in a chunk
+    # this works (reiterating: never seen more than 4, and server performance is
+    # a pragmatic limit). There is no doubt this still slows things down but really
+    # it's hard to imagine that it matters much in python applications.
+    #
+    # The flag for turning off duplicate filtering is really meant for testing.
+    #
+    # Note that not all of the APIs are susceptible to the bug so not all
+    # of them contain the 'dupFilter' in their API info and thus sometimes
+    # self.__dupfilter is None even if nr._filterDuplicates is True.
+
     def __next__(self):
+        r = self.__getNextOne()
+
+        # This "while" is misleading - it's really "if __dupfilter then while true"
+        while self.__dupfilter:
+            thisId = r[self.__apiOP['dupFilter']]
+            if thisId not in self.__dupfilter['prev']:
+                self.__dupfilter['current'][ thisId ] = 1  # only the key matters
+                break
+            r = self.__getNextOne()     # try the next one
+
+        return r
+
+    def __getNextOne(self):
         try:
             r = self.__list.pop(0)
 
@@ -815,6 +887,12 @@ class _Numerous_ChunkedAPIIter:
 
             if not self.__nextURL:          # no next url was given to us
                 raise StopIteration()       # this is the normal way to end
+
+            # It's time to get the next chunk, so it's also time to slide
+            # over the duplicate filtering info (if we are filtering dups)
+            if self.__dupfilter:
+                self.__dupfilter['prev'] = self.__dupfilter['current']
+                self.__dupfilter['current'] = {}
 
             # try to get the next chunk
             # It really should not fail but of course with a remote
