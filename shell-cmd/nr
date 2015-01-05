@@ -2,7 +2,12 @@
 #
 # CUSTOMIZE THIS to however/wherever you installed:
 #                  - numerous.py library (usually ~/lib)
+#                    (or unnecessary if you installed in system library via pip)
 #                  - nr.py python shell-level command (usually ~/bin)
 #                  
 
-PYTHONPATH=$HOME/lib $HOME/bin/nr.py "$@"
+# uncomment this and set appropriately if you did not install using pip
+# PYTHONPATH=$HOME/lib ; export PYTHONPATH
+
+# you might need to edit this depending on where you installed nr and nr.py
+$HOME/bin/nr.py "$@"

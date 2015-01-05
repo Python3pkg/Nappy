@@ -45,5 +45,7 @@ If you want to use the shell command **nr** download that (and **nr.py**) and in
 
 ## Miscellaneous Notes
 
-* LANG: The NumerousApp API will sometimes return strings with the ellipsis ("...") unicode character. If you are running on a system that defaults LANG to C (I saw this on FreeBSD) you'll get an encoding exception from python when this character occurs.  Set environment variable LANG to en_US.UTF-8 or similar as appropriate.
+* shell-cmd: If you install numerous.py using pip you can just use the "nr" and "nr.py" commands as-is (the "nr" wrapper is redundant). If you manually install the class library then you should examine "nr" and set the PYTHONPATH appropriately.
+
+* shell-cmd/nr LANG: The NumerousApp API will sometimes return strings with the ellipsis ("...") unicode character. If you are running on a system that defaults LANG to C (I saw this on FreeBSD) you'll get an encoding exception when using the shell command ("nr") when this character occurs.  Set environment variable LANG to en_US.UTF-8 or similar as appropriate.
 

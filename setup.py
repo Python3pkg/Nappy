@@ -2,7 +2,7 @@
 
 from distutils.core import setup
 setup(name='numerous',
-      version='1.1',
+      version='1.2',
       description='Python class for NumerousApp API',
       author='Neil Webber',
       author_email='nw@neilwebber.com',
