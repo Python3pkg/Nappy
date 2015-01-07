@@ -6,8 +6,8 @@ import os
 import argparse
 import string
 import time
-from numerous import Numerous, NumerousError, \
-                     NumerousAuthError, NumerousMetricConflictError
+from numerous import Numerous, numerousKey, \
+                     NumerousError, NumerousAuthError, NumerousMetricConflictError
 
 
 #
@@ -301,8 +301,6 @@ from numerous import Numerous, NumerousError, \
 #       nr --delete -E 34552988823401 23420983483332
 #
 
-credsAPIKey = 'NumerousAPIKey'
-
 parser = argparse.ArgumentParser()
 parser.add_argument('-V', '--version', action="store_true")
 parser.add_argument('-c', '--credspec')
@@ -437,86 +435,16 @@ if args.write or args.delete:
 
 
 
-
-# helper function for parsing the creds argument
-# the goal here is to return a dictionary. At this
-# point "s" is one of the "credspec" forms allowed (see header comments)
-#
-def credsJSONfromCredSpec(s):
-    f = None 
-    closeThis = None
-
-    if s == "@-":            # creds coming from stdin
-        f = sys.stdin
-
-    # see if they are in a file
-    else:
-        try:
-            if len(s) > 1 and s[0] == '@':
-                f = open(s[1:], 'r')
-                closeThis = f
-            elif s[0] == '/' or s[0] == '.':
-                f = open(s, 'r')
-                closeThis = f
-        except:
-            print("Cannot open", s)
-            exit(1)
-
-    # if we got a file read it
-    if f:
-        s = f.read()
-        if closeThis:
-            closeThis.close()
-
-    try:
-        j = json.loads(s)
-    except ValueError:
-        j = {}
-
-
-    #
-    # This is kind of a hack and might hide some errors on your part
-    #
-    if not credsAPIKey in j: # this is how the naked case happens
-        # replace() bcs there might be a trailing newline on naked creds 
-        # (usually happens with a file or stdin)
-        j[credsAPIKey] = s.replace('\n','')
-
-    return j
-
-#
-# Get the creds from the credfile or the environment
-#
-
-if not args.credspec:
-    #
-    # no -c was specified use the environment variable
-    #
-    credSpec = os.environ.get('NUMEROUSAPIKEY', None)
-    if not credSpec:
-        print("No creds: no -c and no NUMEROUSAPIKEY environment variable.")
-        exit(1)
-else:
-    credSpec = args.credspec
-
-#
-# credSpec can be any of:
-#    a JSON string
-#    a naked API key
-#    a filename (starting with @ or . or / -- '@' stripped others used)
-#
-creds = credsJSONfromCredSpec(credSpec)
-
-
-
+# this convenience function implements the "it can come from almost anywhere" thing
+k = numerousKey(args.credspec)
 
 if args.key:
   # this is a hack way to just extract the API key from "wherever"
   # honestly it probably should be a separate program but here we are
-  print(creds[credsAPIKey])
+  print(k)
   exit(0)
 
-nrServer = Numerous(apiKey=creds[credsAPIKey])
+nrServer = Numerous(apiKey=k)
 
 if args.debug:
     if args.debug > 1:
@@ -1079,7 +1007,7 @@ if not args.quiet:
             elif args.event:
                 printEventResults(rslt, fld)
             else:
-                print(rslt)       # might likely see JSON here
+                print(rslt)       # likely python dict output (use -j for JSON)
 
 
 

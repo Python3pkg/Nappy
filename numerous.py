@@ -42,7 +42,8 @@
 # #################
 
 import json
-import sys              # only for version in user-agent string
+import sys              # only for version in user-agent and sys.stdin creds helper
+import os               # for getting environment in creds helper
 import requests         # (cheerleading: wow this made the HTTP code simple)
 import logging          # needed for debug output 
 
@@ -54,7 +55,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20150105.1"
+_NumerousClassVersionString = "20150107-1.3.1"
 
 #
 # metric object
@@ -531,13 +532,18 @@ class Numerous:
     # server, if specified,  should be a naked FQDN 
     # (e.g., 'api.numerousapp.com')
     # 
-    def __init__(self, apiKey, server='api.numerousapp.com'):
+    def __init__(self, apiKey=None, server='api.numerousapp.com'):
+
+        if not apiKey:
+            apiKey = numerousKey()
+
         # the serverName is just saved for informational purposes
         # the __serverURL is used with the various endpoints
         self.serverName = server
         self.__serverURL = "https://" + server
         self.authTuple = (apiKey, '')
         self.__debug = 0
+        self.__ServerRequestCount = 0
 
         # The version string will be used for the user-agent
         pyV = "(Python {}.{}.{})".format(sys.version_info.major,
@@ -716,6 +722,7 @@ class Numerous:
 
         httpmeth = api.get('http-method','OOOPS')
 
+        self.__ServerRequestCount += 1
         resp = requests.request(httpmeth, url,
                                 auth=self.authTuple,
                                 data=data,
@@ -969,3 +976,83 @@ class NumerousChunkingError(NumerousError):
 
 class NumerousAuthError(NumerousError):
     pass
+
+
+
+# I found this a good way to handle supplying the API key so it's here
+# as a class method you may find useful. What this function does is
+# return you an API Key from a supplied string or "readable" object:
+#
+#          a "naked" API key (in which case this function is a no-op)
+#          @-        :: meaning "get it from stdin"
+#          @blah     :: meaning "get it from the file "blah"
+#          /blah     :: get it from file /blah
+#          .blah     :: get it from file .blah (could be ../ etc)
+#        /readable/  :: if it has a .read method, get it that way
+#          None      :: get it from environment variable NUMEROUSAPIKEY
+#
+# Where the "it" that is being gotten from any of those sources can be:
+#    a "naked" API key
+#    a JSON object, from which the credsAPIKey will be used to get the key
+#
+# Arguably this doesn't belong here, but it's helpful. Purists are free to
+# ignore it or delete from their own tree :)
+#
+def numerousKey(s=None, credsAPIKey='NumerousAPIKey'):
+
+    if not s:
+        # try to get from environment
+        s = os.environ.get('NUMEROUSAPIKEY', None)
+        if not s:
+            return None
+
+    closeThis = None
+
+    if s == "@-":            # creds coming from stdin
+        s = sys.stdin
+
+    # see if they are in a file
+    else:
+        try:
+            if len(s) > 0:        # is it a string or a file object?
+                pass
+
+            # it's stringy - if it looks like a file open it or fail
+            try:
+                if len(s) > 1 and s[0] == '@':
+                    s = open(s[1:], 'r')
+                    closeThis = s
+                elif s[0] == '/' or s[0] == '.':
+                    s = open(s, 'r')
+                    closeThis = s
+            except:
+                return None
+
+        except TypeError:      # it wasn't stringy, presumably it's a "readable"
+            pass
+
+    # well, see if whatever it is, is readable, and go with that if it is
+    try:
+        v = s.read()
+        if closeThis:
+            closeThis.close()
+        s = v
+    except AttributeError:
+        pass
+
+    # at this point s is either a JSON or a naked cred (or bogus)
+    try:
+        j = json.loads(s)
+    except ValueError:
+        j = {}
+
+
+    #
+    # This is kind of a hack and might hide some errors on your part
+    #
+    if not credsAPIKey in j: # this is how the naked case happens
+        # replace() bcs there might be a trailing newline on naked creds
+        # (usually happens with a file or stdin)
+        j[credsAPIKey] = s.replace('\n','')
+
+    return j[credsAPIKey]
