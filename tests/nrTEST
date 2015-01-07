@@ -13,11 +13,17 @@ DELETE_THESE=""
 EXITSTATUS=0
 
 QUICK=no
+DEVTEST=no
+NRTEST=./nrTEST      # only used in DEVTEST case
 
 #
 # OPTIONS
 #    -Q skips some of the slower tests ("quick")
-#    -X invokes the nr program as nrX. I use this for testing.
+#    -X allows override of nr and python via environment variables (debug/test).
+#    -D is for development testing and recursively invokes itself to test
+#       python and python3 using the local development tree (yeehah!)
+#
+# Note the option parsing is hokey and doesn't allow e.g., -XQ use -X -Q
 #
 
 while [ $# -gt 0 ]
@@ -29,11 +35,54 @@ do
       ;;
  
     x-X)
-      NR=nrX
+      if [ "x$PYX" != "x" ]; then PYTHON="$PYX"; fi
+      if [ "x$NRX" != "x" ]; then NR="$NRX"; fi
+      echo "Using \"$PYTHON\" for python interpreter"
+      echo "Using \"$NR\" for the nr command program"
+      if [ "x$NRTX" != "x" -a "x$NRTX" != "x$NRTEST" ]
+      then
+          echo " ... and NRTEST is overridden to $NRTX"
+          NRTEST="$NRTX"
+      fi
       shift
       ;;
+
+    x-D)
+      DEVTEST=yes
+      shift
+      ;;
+
   esac
 done
+
+if [ "$DEVTEST" = "yes" ]
+then
+    echo DEVELOPMENT TESTING MODE
+
+    if [ ! -x $NRTEST ]; then echo "no $NRTEST - aborting"; exit 1; fi
+    QK=""
+    if [ "$QUICK" = "yes" ]; then QK="-Q"; fi
+
+    NRPY=../shell-cmd/nr.py
+
+    echo ' - - - - TESTING PYTHON 2 - - - -'
+
+    PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK
+    if [ $? -ne 0 ]; then echo "python v2 failed"; exit 1; fi
+
+    echo ' - - - - TESTING PYTHON 3 - - - -'
+
+    PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK
+    if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
+
+    exit 0
+fi
+
+
+
+
+
+
 
 #
 # Test the -k function first of all
