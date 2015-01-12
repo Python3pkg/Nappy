@@ -17,9 +17,9 @@ from numerous import Numerous, numerousKey, \
 #  nr [ -c credspec ] [-Dnq] -E --delete m1 event1 ...
 #  nr [ -c credspec ] [-Dnq] -P --delete m1 ...
 #  nr [ -c credspec ] [-Dq] --killmetric m1 ...
-#  nr [ -c credspec ] [-Dqj][-U] 
+#  nr [ -c credspec ] [-Dqj][-U]
 #  nr [ -c credspec ] [-Dqj][-UPw] photo-file
-#  nr -V 
+#  nr -V
 #
 # Perform Numerous operations on metrics
 #
@@ -35,7 +35,7 @@ from numerous import Numerous, numerousKey, \
 #
 #       So you only need the '@' (which gets stripped) if you are specifying
 #       a relative path that does not start with . or /
-#       Note too that  -c ~/.somefile works because the shell 
+#       Note too that  -c ~/.somefile works because the shell
 #       expands the tilde (so there is a leading '/' by the time seen here)
 #
 #       The file should contain a JSON object with a key "NumerousAPIKey".
@@ -64,7 +64,7 @@ from numerous import Numerous, numerousKey, \
 # to extract the key from "wherever". No other operations are performed.
 #
 # If -n is specified, the metric IDs should be names ("labels") instead
-# of internal identifiers. At least one extra request to the server will 
+# of internal identifiers. At least one extra request to the server will
 # be made (possibly more if you have many metrics) as the program fetches
 # the metrics collection and looks for the metric by name. Note that this
 # is less robust than specifying the internal ID, as there is no guarantee
@@ -73,18 +73,18 @@ from numerous import Numerous, numerousKey, \
 # If -w (--write) is specified, SOMETHING will be written. That something is
 # either metric value itself, or with another option:
 #
-#     -+ (--plus) : the metric value will be ADDED to 
+#     -+ (--plus) : the metric value will be ADDED to
 #        FYI: implemented atomically by the NumerousApp server
 #     -E (--event) : an event is written ... equivalent to naked -w
 #     -I (--interaction) : an interaction (comment/like/error) will be written
 #     -P (--photo) : a photo is attached to the metric. value1 MUST
 #                    be a filename. A mimeType will be inferred.
-#     -M (--metric) : a metric is CREATED or UPDATED. 
+#     -M (--metric) : a metric is CREATED or UPDATED.
 #        To create a metric, the name (m1) MUST begin with a '+' which
 #        will be stripped ("+NewName" becomes "NewName"). The "-n" flag
-#        is not required (and has no effect in this case). To update a 
+#        is not required (and has no effect in this case). To update a
 #        metric just specify its metric ID (no '+') or name (-n and no '+')
-#        
+#
 #        value1 MUST be present and should be a JSON object; it will
 #        be sent as the metric data per the API. (Use '{}' for defaults).
 #        Two other forms are accepted besides JSON:
@@ -92,8 +92,8 @@ from numerous import Numerous, numerousKey, \
 #            the word "private"
 #        A naked number such as 17 is equivalent to '{ "value" : 17 }'.
 #        The word private is equivalent to '{ "private" : true }' (and
-#        value 0 which is implied). The default for private is false. There 
-#        is no shorthand for specifying private AND a non-zero initial value; 
+#        value 0 which is implied). The default for private is false. There
+#        is no shorthand for specifying private AND a non-zero initial value;
 #        use full on JSON for that.
 #
 #        When updating a metric the current fields will be read and the
@@ -109,7 +109,7 @@ from numerous import Numerous, numerousKey, \
 #
 # Note that you still have to specify -w with -M. There's not really a
 # particularly good reason for this; it's just how I did it, simply to
-# preserve the rule that -w means m1/v1 pairs in the arguments while 
+# preserve the rule that -w means m1/v1 pairs in the arguments while
 # no -w means the arguments are all metric IDs. Naked -M
 # by itself is the same as no options and means just read metrics.
 #
@@ -129,23 +129,23 @@ from numerous import Numerous, numerousKey, \
 # Without -w:
 #      -B (--subscriptions) : subscriptions will be read.
 #         * If no metric IDs are given your entire set of subscriptions
-#           will be read. 
+#           will be read.
 #         * As a special case, -Bn and no metric IDs will simply display a list
-#           of metricID and name. This is useful for finding the metric IDs of all 
+#           of metricID and name. This is useful for finding the metric IDs of all
 #           the metrics you are subscribed to (have put into your display) in the App.
 #
 #         * Otherwise the subscription parameters on a particular
 #           metric(s) are read. NOTE: It is not currently possible to write
 #           subscriptions from this command (not yet implemented)
 #
-#      -E (--event) : the events will be read. 
+#      -E (--event) : the events will be read.
 #         Events are value changes.
 #         You can read a SINGLE event by ID using the field notation:
-#                -E 7834758745[245235235]   
+#                -E 7834758745[245235235]
 #         (metric ID and [eventID]) and you can use -n notation for the metricID:
-#                -E metname[245235235]   
+#                -E metname[245235235]
 #
-#      -I (--interaction) : interactions will be read. 
+#      -I (--interaction) : interactions will be read.
 #         Interactions are everything other than value changes
 #         You can read a SINGLE interaction by ID using the field notation
 #
@@ -160,20 +160,20 @@ from numerous import Numerous, numerousKey, \
 #         or the entire thing is displayed in JSON.
 #
 # When writing something, the m1/v1... command line arguments
-# should be metric/value pairs. They will be written (plain -w) or 
+# should be metric/value pairs. They will be written (plain -w) or
 # ADDed (-+) (NumerousAPI ADD action), or sent as Interactions (-I)
 # (e.g., comments and such).
-# 
+#
 # When writing values to metrics, the value must simply be a naked number.
 # When writing other types (e.g., interactions) the value can (usually should)
 # be a JSON. Note that it has to be ONE shell argument so use quotes carefully.
 #
-# Without -w, if -S or -I is specified the Stream collection or the 
+# Without -w, if -S or -I is specified the Stream collection or the
 # Interactions collection will be read.
 #
 # Without any -w/-S/-I etc options the specified metrics (m1...) will be read
 #
-# If you are reading something you can specify which element you want 
+# If you are reading something you can specify which element you want
 # displayed using brackets after the ID. So, for example:
 #    nr 258495834583459[label]
 #
@@ -181,7 +181,7 @@ from numerous import Numerous, numerousKey, \
 # of its value. For convenience, subdictionaries will also be automatically
 # indexed to whatever degree makes sense (if there is ambiguity you will get
 # the "first match" however that is defined by many unknown factors). This
-# use case is mostly intended for doing things like 258495834583459[web] 
+# use case is mostly intended for doing things like 258495834583459[web]
 # to display the web URL (which itself is inside the "links" dictionary).
 #
 # When using the [] feature be careful of escaping/quoting/etc.
@@ -191,13 +191,13 @@ from numerous import Numerous, numerousKey, \
 # implement any escape such as [[
 #
 # It is (of course) far better to use the [] feature to access a particular
-# field (e.g., commentBody) of the stream and similar outputs than it is to 
-# pipe the "human output" to awk '{print $2}' or similar hacks. 
+# field (e.g., commentBody) of the stream and similar outputs than it is to
+# pipe the "human output" to awk '{print $2}' or similar hacks.
 #
-# Finally, with no operations and no metric IDs (m1 etc) at all, a list 
+# Finally, with no operations and no metric IDs (m1 etc) at all, a list
 # of metric IDs is read from the server and printed out
 #
-# If -j is specified, output will be JSON. Else bare. Note that field 
+# If -j is specified, output will be JSON. Else bare. Note that field
 # selection doesn't happen on JSON output -- you always get the whole thing.
 #
 # If "-t limit" is specified, reads on collections will stop at limit
@@ -208,13 +208,13 @@ from numerous import Numerous, numerousKey, \
 #
 # If -q is specified, no "normal" output is generated. Some error cases
 # or unhandled exceptions might still cause output, but no server interaction
-# that "works" (which includes the server returning a "normal" error) will 
+# that "works" (which includes the server returning a "normal" error) will
 # generate output. You *can* specify quiet even where it sort of makes no
-# sense (e.g., reading a variable and quiet), perhaps you just want to 
+# sense (e.g., reading a variable and quiet), perhaps you just want to
 # test the exit code (so we allow that combination).
 #
 # Interactions (comments/likes/errors), photos, and events (value updates) can
-# be deleted using the --delete form. There is no "short option" 
+# be deleted using the --delete form. There is no "short option"
 # (single letter) flavor of --delete on purpose. Specify -I to delete
 # an interaction or -E to delete an event, and give the metric ID and item ID
 # There is no "val" for --delete --P
@@ -232,8 +232,8 @@ from numerous import Numerous, numerousKey, \
 #   WRITE 17 to MyVar and 42 to MyOtherVar:
 #       nr -w -n MyVar 17 MyOtherVar 42
 #
-#       Credentials come from the environment. 
-#       There will be at least one extra API call to translate the 
+#       Credentials come from the environment.
+#       There will be at least one extra API call to translate the
 #       variable names into IDs (there could be multiple calls if the
 #       user has enough variables to make the server segment the replies)
 #
@@ -249,7 +249,7 @@ from numerous import Numerous, numerousKey, \
 #   COMMENT: simple case
 #       nr -wI -n XYZ 'bozo the clown'
 #
-#       as a special case hack a "naked" interaction (not a JSON) 
+#       as a special case hack a "naked" interaction (not a JSON)
 #       will be taken as a comment. So this is identical to previous example.
 #
 # You can use -I to send any valid type of interaction. So, for example:
@@ -258,7 +258,7 @@ from numerous import Numerous, numerousKey, \
 #       nr -wI 53349538495834 '{ "kind": "error", "commentBody": "error stuff" }'
 #       (note that numerous uses commentBody for error details too)
 #
-#   LIKE: 
+#   LIKE:
 #       nr -wI 53349538495834 '{ "kind": "like" }'
 #
 #   CREATE: create a metric
@@ -271,7 +271,7 @@ from numerous import Numerous, numerousKey, \
 #   UPDATE: set a metric's description
 #       nr -wM -n XYZ '{ "description": "i am a little teapot" }'
 #
-#   DISPLAY INTERACTIONS: 
+#   DISPLAY INTERACTIONS:
 #       nr -Ij -n MyVar
 #
 #       Display the interactions collection in JSON
@@ -294,8 +294,8 @@ from numerous import Numerous, numerousKey, \
 #   USING FIELDS WITH EVENTS
 #       nr -E --limit 1 'SomeName[value]'
 #
-#       is a silly way to get at the current value of SomeName using the 
-#       fields feature and the limit feature. 
+#       is a silly way to get at the current value of SomeName using the
+#       fields feature and the limit feature.
 #
 #   DELETE AN EVENT (id 23420983483332)
 #       nr --delete -E 34552988823401 23420983483332
@@ -337,7 +337,7 @@ if args.version:
 
 
 
-# --delete is exclusive with MUCH of the 'wgx' exclusive 
+# --delete is exclusive with MUCH of the 'wgx' exclusive
 # group but not all
 #   ... so couldn't use built-in exclusion features
 #   ... could have just ignored, but it seems best to make sure that what
@@ -463,7 +463,7 @@ except NumerousAuthError:
 # This function takes a string that *MIGHT* be a numeric value and
 # converts it to a number, or just returns it. This is used for two reasons:
 #
-#   1) The Numerous server insists (quite reasonably so) that numeric values 
+#   1) The Numerous server insists (quite reasonably so) that numeric values
 #      come across as JSON numbers (17), not as strings ("17"). It turns out
 #      the server only enforces that on some APIs and not others; but
 #      we choose to be conservative in what we send regardless.
@@ -530,8 +530,8 @@ def valueParser(s):
 # Given a list of Metric Names, translate them into Metric IDs.
 # Note that if we don't find a match we just leave the name untranslated
 # in the result, and eventually you'll get some error from the server.
-# This does have the effect of letting you mix names and IDs in one 
-# command line (or always specifying -n whether using names or IDs) but 
+# This does have the effect of letting you mix names and IDs in one
+# command line (or always specifying -n whether using names or IDs) but
 # I wouldn't recommend doing that. Caveat user.
 #
 def translateNames(nr, names):
@@ -569,19 +569,19 @@ def isEventOrInteractionId(s):
 
 #
 # support function for the metric[field] concept
-# Given a dictionary (usually a Numerous result) and a field name that 
-# is (supposedly) either in that dictionary OR in a subdictionary, 
+# Given a dictionary (usually a Numerous result) and a field name that
+# is (supposedly) either in that dictionary OR in a subdictionary,
 # return the field
-# 
+#
 def findSomethingSomewhere(d, f):
     # this could be duck typed but we do check for dict explicitly
     # otherwise the expression d[k] risks indexing a string element or
     # other iterable that isn't a dictionary. The whole thing is a bit
     # hokey but it is a damn convenient feature to be able to say
-    #      MetricID[web] 
+    #      MetricID[web]
     # to get at MetricID[links][web]
     #
-    # Keep in mind this is all just a command line shell utility 
+    # Keep in mind this is all just a command line shell utility
     # so convenience trumps some other considerations
     if type(d) is not dict:
         return None
@@ -714,7 +714,7 @@ else:
 #
 # If we're doing this by name, translate the IDs first
 #
-if args.name: 
+if args.name:
     metrics = translateNames(nrServer, metrics)
 
 resultList = []
@@ -828,10 +828,10 @@ while len(metrics):
         # put the "val" in as '__naked__' key
         try:
             jval = json.loads(val)
-            # this test serves two purposes: see if it is dict-like, 
+            # this test serves two purposes: see if it is dict-like,
             # and protect our __naked__ hack
             if '__naked__' in jval:
-                # seriously, you are a twit... 
+                # seriously, you are a twit...
                 print("Invalid Numerous JSON given: ", val)
                 exit(1)
         except (TypeError, ValueError):
@@ -881,7 +881,7 @@ while len(metrics):
                     jval['value'] = 0    # this is implied by API anyway
                 else:
                     jval['value'] = vp
-                
+
             metric = nrServer.createMetric(r['ID'], attrs=jval)
             if args.json:
                 r['result'] = metric.read(dictionary=True)
@@ -893,8 +893,8 @@ while len(metrics):
             try:
                 val = valueParser(val)
                 try:
-                    r['result'] = metric.write(val, 
-                                               onlyIf = args.onlyIf, 
+                    r['result'] = metric.write(val,
+                                               onlyIf = args.onlyIf,
                                                add = args.plus,
                                                dictionary = args.json)
                 except NumerousMetricConflictError as e:
@@ -906,7 +906,7 @@ while len(metrics):
                     else:
                         r['result'] = "NoChange"
 
-            except ValueError: 
+            except ValueError:
                 exitStatus = 1
                 r['result'] = "Bad value syntax: '{}'".format(val)
 
@@ -984,7 +984,7 @@ while len(metrics):
             exitStatus = 1
             r['result'] = None
 
-    resultList.append(r)  
+    resultList.append(r)
 
 
 #
@@ -1012,5 +1012,3 @@ if not args.quiet:
 
 
 exit(exitStatus)
-  
-
