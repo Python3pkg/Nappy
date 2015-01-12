@@ -456,7 +456,7 @@ if args.debug:
 try:
     nrServer.ping()
 except NumerousAuthError:
-    print("Authorization failed (likely cause is bad credentials)")
+    print("Authorization failed. Likely cause is bad credentials (API key)")
     exit(1)
 
 #
