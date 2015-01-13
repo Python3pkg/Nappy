@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2014, Neil Webber
+# Copyright (c) 2015, Neil Webber
 # All rights reserved. 
 #
 # Redistribution and use in source and binary forms, with or without
@@ -46,6 +46,8 @@ import sys              # only for version in user-agent and sys.stdin creds hel
 import os               # for getting environment in creds helper
 import requests         # (cheerleading: wow this made the HTTP code simple)
 import logging          # needed for debug output 
+import time
+import re               # for metricByLabel regex handling
 
 # --- - --- - --- only needed to enable HTTP debugging output
 try:
@@ -55,7 +57,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20150107-1.3.1"
+_NumerousClassVersionString = "20150112-expthrottle"
 
 #
 # metric object
@@ -165,6 +167,37 @@ class NumerousMetric:
 
     # constructor ... usually invoked via Numerous.metric()
     def __init__(self, id, numerous):
+        #
+        # "id" should normally be the naked metric id (as a string).
+        #
+        # It can also be a nmrs: URL, e.g.:
+        #     nmrs://metric/2733614827342384
+        #
+        # Or a 'self' link from the API:
+        #     https://api.numerousapp.com/metrics/2733614827342384
+        #
+        # in either case we get the ID in the obvious syntactic way.
+        #
+        # It can also be a metric's web link, e.g.:
+        #     http://n.numerousapp.com/m/1x8ba7fjg72d
+        #
+        # in which case we "just know" that the tail is a base36
+        # encoding of the ID.
+        #
+        # The decoding logic here makes the specific assumption that
+        # the presence of a '/' indicates a non-naked metric ID. This
+        # seems a reasonable assumption given that IDs have to go into URLs
+        #
+        try:
+            if '/' in id:
+                fields = id.split('/')
+                if fields[-2] == "m":
+                    id = int(fields[-1],36)
+                else:
+                    id = fields[-1]
+        except TypeError:    # you can pass an integer in as an ID
+            id = str(id)     # but we carry it around as a string, just because
+
         self.id = id
         self.nr = numerous
 
@@ -531,8 +564,23 @@ class Numerous:
     # 
     # server, if specified,  should be a naked FQDN 
     # (e.g., 'api.numerousapp.com')
-    # 
-    def __init__(self, apiKey=None, server='api.numerousapp.com'):
+    #
+    # The throttle policy is not well tested because the NumerousApp server
+    # is not yet enforcing the X-Rate-Limit-Remaining parameters. I've tested
+    # it somewhat. The default policy simply tries to obey the server's rate
+    # limit parameters. You can write your own policies and specify them here.
+    #
+    # See the code for details. The most useful custom throttle policy might
+    # just be the null policy which never does retries and never slows itself
+    # down. You can specify that one with this clever lambda:
+    #
+    #     nr = Numerous(throttle = lambda nr,tp,td,up: False)
+    #
+    # see the throttleDefault function for more info/discussion
+    #
+    def __init__(self, apiKey=None, server='api.numerousapp.com',
+                               throttle=None,
+                               throttleData=None):
 
         if not apiKey:
             apiKey = numerousKey()
@@ -544,6 +592,19 @@ class Numerous:
         self.authTuple = (apiKey, '')
         self.__debug = 0
         self.__ServerRequestCount = 0
+        self._arbitraryMaximumTries = 10   # see throttle retry loop
+
+        # throttle policy tuple is: function, data, up
+        # where "data" is the throttle policy specific data
+        # and "up" is the next (recursive) policy tuple
+        #
+        # The system throttleDefault policy uses the data ("40") as 
+        # the "arbitrary voluntary limit" for when you are getting close to the limit
+        self.__throttlePolicy = (self.__throttleDefault, 40, None)
+
+        # if you specified your own throttle policy store it
+        if throttle:
+            self.__throttlePolicy = (throttle, throttleData, self.__throttlePolicy)
 
         # The version string will be used for the user-agent
         pyV = "(Python {}.{}.{})".format(sys.version_info.major,
@@ -560,6 +621,70 @@ class Numerous:
     def _setBogusDupFilter(self, f):
         prev = self._filterDuplicates
         self._filterDuplicates = f
+
+    #
+    # The default throttle policy.
+    # Invoked after the response has been received and we are supposed to
+    # return True to force a retry or False to accept this response as-is.
+    #
+    # The policy this implements: 
+    #    if the server failed with too busy, do backoff based on attempt number
+    #
+    #    if we are "getting close" to our limit, arbitrarily delay ourselves
+    #
+    #    if we truly got spanked with "Too Many Requests"
+    #    then delay the amount of time the server told us to delay.
+    #
+    # The arguments supplied to us are:
+    #     nr is the Numerous (handled explicitly so you can write external funcs too)
+    #     tparams is a dictionary containing:
+    #         'attempt'        : the attempt number. Zero on the very first try
+    #         'rate-remaining' : X-Rate-Limit-Remaining reported by the server
+    #         'rate-reset'     : time (in seconds) until fresh rate granted
+    #         'result-code'    : HTTP code from the server (e.g., 409, 200, etc)
+    #         'resp'           : the full-on response object if you must have it
+    #         'request'        : information about the original request
+    #         'debug'          : current debug level
+    #     td is the data you supplied as "throttleData" to the Numerous() constructor
+    #     up is a tuple useful for calling the original system throttle policy:
+    #          up[0] is the function pointer
+    #          up[1] is the td for *that* function
+    #          up[2] is the "up" for calling *that* function
+    #       ... so after you do your own thing if you then want to defer to the
+    #           built-in throttle policy you can
+    #                     return up[0](nr, tparams, up[1], up[2])
+    #
+    # All of this seems overly general for what basically amounts to "sleep sometimes"
+    #
+    @staticmethod
+    def __throttleDefault(nr, tparams, td, up):
+        attempt = tparams['attempt']    # note: is zero on very first try
+        rateleft = tparams['rate-remaining']
+
+        try:
+            backoff = [ 5, 15, 30, 60 ][attempt]
+        except IndexError:
+            return False               # too many tries
+
+        # if the server actually has failed with too busy, sleep and try again
+        if tparams['result-code'] == 500:
+            time.sleep(backoff)
+            return True
+
+        # if we weren't told to back off, no need to retry
+        if tparams['result-code'] != 429:
+            # but if we are closing in on the limit then slow ourselves down
+            if rateleft < td:    # that's the arbitrary voluntary limit
+                time.sleep(max(backoff, td - rateleft))
+
+            return False               # no retry
+
+
+        # decide how long to delay ... we just wait for as long as the 
+        # server told us to (plus "backoff" seconds slop to really be sure we 
+        # aren't back too soon)
+        time.sleep(tparams['rate-reset'] + backoff)
+        return True
 
     # control debugging level
     def debug(self, lvl=1):
@@ -583,17 +708,19 @@ class Numerous:
 
 
     # instantiate a metric hanging off this Numerous instance
-    # NOTE: You can also instantiate naked metrics but they eventually 
+    # NOTE: You can also instantiate naked metrics but they still
     #       have to associate with a Numerous. So the usual way is:
     #             nr = Numerous(blah blah)
     #             m = nr.metric('123123123')
     #
-    # vs m = NumerousMetric('123123123') and then m.nr = nr
+    # vs m = NumerousMetric('123123123', nr) or even
+    #    m = NumerousMetric('123123123', None)
+    # which will work but will blow up as soon as you try anything.
     #
     # If your metricId is bogus you won't know here. You can create
     # entirely bogus metric objects, e.g.
     #
-    #      m = NumerousMetric('Something Entirely Bogus')
+    #      m = nr.metric('Something Entirely Bogus')
     #
     # You will (of course) eventually get exceptions and errors when used.
     # Even with a valid metricId your metric object can still become
@@ -607,6 +734,51 @@ class Numerous:
 
     def metric(self, metricId):
        return NumerousMetric(metricId, self)
+
+    # A version of metric() that accepts a name (label) and attempts to translate
+    # that into an ID. This is potentially very expensive, and can be ambiguous.
+    # You accept all those risks if you use this. Serious programmatic access
+    # should probably always be done by ID not by name.
+    #
+    # matchType specifies how the matching will be done:
+    #
+    #  * FIRST - this is the default. The first match will be used.
+    #  * BEST  - the "best" match will be used, where "best" is arbitrarily
+    #            defined as the longest match. If there are multiple similar
+    #            length matches you will get one of them (unpredictable which)
+    #  * ONE   - There must be exactly one match or NumerousMetricConflictError
+    # 
+    #  * anything else is an error
+    #
+
+    def metricByLabel(self, labelspec, matchType='FIRST'):
+        bestMatch = ( None, 0 )
+        rx = re.compile(labelspec)
+
+        if not matchType:
+            matchType = "FIRST"
+        if matchType not in [ "FIRST", "BEST", "ONE" ]:
+            raise ValueError(matchType)
+
+        for m in self.metrics():
+            matchx = rx.search(m['label'])
+            if matchx:
+                if matchType == "FIRST":
+                    return self.metric(m['id'])
+                elif matchType == "ONE" and bestMatch[0]:
+                    raise NumerousMetricConflictError([ bestMatch[0]['label'], m['label'] ], 409, "More than one match")
+                # if this is "better" than our current best match, keep it
+                sp = matchx.span()
+                matchlen = sp[1] - sp[0]
+                if matchlen > bestMatch[1]:
+                    bestMatch = ( m, matchlen )
+
+        rv = None
+        if bestMatch[0]:
+            rv = self.metric(bestMatch[0]['id'])
+
+        return rv
+
 
     # iterator for the entire metrics collection. 
     # By default gets your own metrics list but you can specify other users
@@ -627,7 +799,7 @@ class Numerous:
         api = self._makeAPIcontext(info, 'photo')
         mpart = { 'image' : ( 'image.img', imageDataOrOpenFile, mimeType) }
         v = self._simpleAPI(api, multipart=mpart)
-        return v
+        return v     # return value is updated user attributes
        
     # iterator for per-user subscriptions. Note: users really
     # can't get anyone's subscriptions other than their own
@@ -722,14 +894,52 @@ class Numerous:
 
         httpmeth = api.get('http-method','OOOPS')
 
-        self.__ServerRequestCount += 1
-        resp = requests.request(httpmeth, url,
-                                auth=self.authTuple,
-                                data=data,
-                                files=multipart,
-                                headers=hdrs)
-        if self.__debug > 9:
-            print(resp.text)
+        # on general principles we aren't going to try "forever"; it's really
+        # the throttle policy that is responsible for limiting this loop.
+        # However, if the "arbitraryMax" is sufficiently large it might still
+        # seem like forever. All of this is up to you (if you supply your own)
+        for attempt in range(self._arbitraryMaximumTries):
+
+            self.__ServerRequestCount += 1
+            resp = requests.request(httpmeth, url,
+                                    auth=self.authTuple,
+                                    data=data,
+                                    files=multipart,
+                                    headers=hdrs)
+            if self.__debug > 9:
+                print(resp.text)
+
+            # invoke the rate-limiting policy. Note that this happens
+            # after the request and normally the policy is simply: if we were
+            # told "Too Many Requests" then delay for a while and try again.
+
+            try:
+                tp = { 'debug' : self.__debug,
+                       'attempt' : attempt,
+                       'rate-remaining' : int(resp.headers['X-Rate-Limit-Remaining']),
+                       'rate-reset' : int(resp.headers['X-Rate-Limit-Reset']),
+                       'result-code' : resp.status_code,
+                       'resp' : resp,
+                       'request' : { 'http-method' : httpmeth, 'url' : url } }
+
+            #
+            # some errors from the server such as Not Authorized carry no
+            # rate information. No throttling policy applied in those cases. :)
+            #   KeyError is the real exception.
+
+            except KeyError:
+                break
+
+            #   ValueError is probably a bug (the "int()" calls failed). 
+            #              Defend against that though I've never seen it happen.
+            except ValueError:
+                break
+
+            td = self.__throttlePolicy[1]
+            up = self.__throttlePolicy[2]
+            if not self.__throttlePolicy[0](self, tp, td, up):
+                break
+
 
         goodCodes = api.get('success-codes', [ requests.codes.ok ])
 
@@ -979,6 +1189,17 @@ class NumerousAuthError(NumerousError):
 
 
 
+#
+# CONVENIENCE FUNCTIONS
+#
+# Not part of the classes, just convenient to have when using NumerousApp
+#
+# numerousKey() - helper to implement common ways to specify the API Key
+#
+
+
+# numerousKey()
+#
 # I found this a good way to handle supplying the API key so it's here
 # as a class method you may find useful. What this function does is
 # return you an API Key from a supplied string or "readable" object:
@@ -1056,3 +1277,4 @@ def numerousKey(s=None, credsAPIKey='NumerousAPIKey'):
         j[credsAPIKey] = s.replace('\n','')
 
     return j[credsAPIKey]
+
