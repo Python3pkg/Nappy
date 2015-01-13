@@ -37,13 +37,11 @@ def NperM(nr, tparams, td, up):
 
     # if we have too many then we have to wait long enough for one to roll off
     if len(stamps) > td['N']:
-        # how long to sleep to get at least 60 seconds later than oldest stamp
+        # how long to sleep to get at least M seconds later than oldest stamp
         ts = max(int(stamps[0] + M - now) + 1, 1)
-        print("sleeping calc is:", ts)
         time.sleep(ts)
     elif len(stamps) * 4 > td['N'] * 3:
         # we're 3/4 of the way there so slow you down a little
-        print("Just sleeping 1")
         time.sleep(1)
 
     stamps.append(now)
