@@ -2,6 +2,8 @@
 
 A python class implementing the [NumerousApp](http://www.numerousapp.com) [APIs](http://docs.numerous.apiary.io).
 
+## Wiki / Documentation
+See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documentation.
 ## python versions
 
 Works on both python2 and python3.
