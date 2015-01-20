@@ -49,6 +49,9 @@ import logging          # needed for debug output
 import time
 import re               # for metricByLabel regex handling
 
+# used for the statistics counters
+from collections import defaultdict
+
 # --- - --- - --- only needed to enable HTTP debugging output
 try:
   from http.client import HTTPConnection
@@ -57,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20150112-1.4.1"
+_NumerousClassVersionString = "20150120-1.4.1"
 
 #
 # metric object
@@ -565,9 +568,7 @@ class Numerous:
     # server, if specified,  should be a naked FQDN 
     # (e.g., 'api.numerousapp.com')
     #
-    # The throttle policy is not well tested because the NumerousApp server
-    # is not yet enforcing the X-Rate-Limit-Remaining parameters. I've tested
-    # it somewhat. The default policy simply tries to obey the server's rate
+    # The default throttle policy simply tries to obey the server's rate
     # limit parameters. You can write your own policies and specify them here.
     #
     # See the code for details. The most useful custom throttle policy might
@@ -591,8 +592,8 @@ class Numerous:
         self.__serverURL = "https://" + server
         self.authTuple = (apiKey, '')
         self.__debug = 0
-        self.__ServerRequestCount = 0
         self._arbitraryMaximumTries = 10   # see throttle retry loop
+        self.statistics = defaultdict(int) # mostly for info/debugging; various stats
 
         # throttle policy tuple is: function, data, up
         # where "data" is the throttle policy specific data
@@ -621,6 +622,7 @@ class Numerous:
     def _setBogusDupFilter(self, f):
         prev = self._filterDuplicates
         self._filterDuplicates = f
+        return prev
 
     #
     # The default throttle policy.
@@ -654,20 +656,39 @@ class Numerous:
     #           built-in throttle policy you can
     #                     return up[0](nr, tparams, up[1], up[2])
     #
+    # It's really (really really) important to understand the return value and
+    # the fact that we are invoked AFTER each request:
+    #    False : simply means "don't do more retries". It does not imply anything
+    #            about the success or failure of the request; it simply means that
+    #            this most recent request (response) is the one to "take" as 
+    #            the final answer
+    #
+    #    True  : means that the response is, indeed, to be interpreted as some
+    #            sort of rate-limit failure and should be discarded. The original
+    #            request will be sent again. Obviously it's a very bad idea to
+    #            return True in cases where the server might have done some
+    #            anything non-idempotent. We assume that a 429 ("Too Many") or
+    #            a 500 ("Too Busy") response from the server means the server didn't
+    #            actually do anything (so a retry, timed appropriately, is ok)
+    #
     # All of this seems overly general for what basically amounts to "sleep sometimes"
     #
     @staticmethod
     def __throttleDefault(nr, tparams, td, up):
-        attempt = tparams['attempt']    # note: is zero on very first try
         rateleft = tparams['rate-remaining']
+        attempt = tparams['attempt']    # note: is zero on very first try
+        if attempt > 0:
+            nr.statistics['throttleMultipleAttempts'] += 1
 
         try:
-            backoff = [ 5, 15, 30, 60 ][attempt]
+            backoff = [ 2, 5, 15, 30, 60 ][attempt]
         except IndexError:
+            nr.statistics['throttleMaxed'] += 1
             return False               # too many tries
 
         # if the server actually has failed with too busy, sleep and try again
         if tparams['result-code'] == 500:
+            nr.statistics['throttle500'] += 1
             time.sleep(backoff)
             return True
 
@@ -675,6 +696,7 @@ class Numerous:
         if tparams['result-code'] != 429:
             # but if we are closing in on the limit then slow ourselves down
             if rateleft < td:    # that's the arbitrary voluntary limit
+                nr.statistics['throttleVoluntaryBackoff'] += 1
                 time.sleep(max(backoff, td - rateleft))
 
             return False               # no retry
@@ -683,6 +705,7 @@ class Numerous:
         # decide how long to delay ... we just wait for as long as the 
         # server told us to (plus "backoff" seconds slop to really be sure we 
         # aren't back too soon)
+        nr.statistics['throttle429'] += 1
         time.sleep(tparams['rate-reset'] + backoff)
         return True
 
@@ -742,36 +765,52 @@ class Numerous:
     #
     # matchType specifies how the matching will be done:
     #
-    #  * FIRST - this is the default. The first match will be used.
-    #  * BEST  - the "best" match will be used, where "best" is arbitrarily
-    #            defined as the longest match. If there are multiple similar
-    #            length matches you will get one of them (unpredictable which)
-    #  * ONE   - There must be exactly one match or NumerousMetricConflictError
+    #  * FIRST  - this is the default. The first match will be used.
+    #  * BEST   - the "best" match will be used, where "best" is arbitrarily
+    #             defined as the longest match. If there are multiple similar
+    #             length matches you will get one of them (unpredictable which)
+    #  * ONE    - There must be exactly one match or NumerousMetricConflictError
+    #  * STRING - don't do any regexp. Match the labelspec exactly.
     # 
     #  * anything else is an error
     #
 
     def metricByLabel(self, labelspec, matchType='FIRST'):
+        def raiseConflict(s1,s2): 
+            raise NumerousMetricConflictError([s1, s2], 409, "More than one match")
+
         bestMatch = ( None, 0 )
-        rx = re.compile(labelspec)
 
         if not matchType:
             matchType = "FIRST"
-        if matchType not in [ "FIRST", "BEST", "ONE" ]:
+        if matchType not in [ "FIRST", "BEST", "ONE", "STRING" ]:
             raise ValueError(matchType)
 
+        if matchType == "STRING":
+            rx = None
+        else:
+            rx = re.compile(labelspec)
+
         for m in self.metrics():
-            matchx = rx.search(m['label'])
-            if matchx:
-                if matchType == "FIRST":
-                    return self.metric(m['id'])
-                elif matchType == "ONE" and bestMatch[0]:
-                    raise NumerousMetricConflictError([ bestMatch[0]['label'], m['label'] ], 409, "More than one match")
-                # if this is "better" than our current best match, keep it
-                sp = matchx.span()
-                matchlen = sp[1] - sp[0]
-                if matchlen > bestMatch[1]:
-                    bestMatch = ( m, matchlen )
+            if not rx:
+                if m['label'] == labelspec:
+                    if bestMatch[0]:
+                        raiseConflict(bestMatch[0]['label'], m['label'])
+
+                    bestMatch = ( m, 1 )     # length not actually relevant for STRING
+            else:
+                matchx = rx.search(m['label'])
+                if matchx:
+                    if matchType == "FIRST":
+                        return self.metric(m['id'])
+                    elif matchType == "ONE" and bestMatch[0]:
+                        raiseConflict(bestMatch[0]['label'], m['label'])
+
+                    # if this is "better" than our current best match, keep it
+                    sp = matchx.span()
+                    matchlen = sp[1] - sp[0]
+                    if matchlen > bestMatch[1]:
+                        bestMatch = ( m, matchlen )
 
         rv = None
         if bestMatch[0]:
@@ -873,6 +912,8 @@ class Numerous:
     #
     def _simpleAPI(self, api, jdict=None, multipart=None, url=None):
 
+        self.statistics['simpleAPI'] += 1
+
         # take the base url if you didn't give us an override
         if not url:
             url = api['base-url']
@@ -900,7 +941,8 @@ class Numerous:
         # seem like forever. All of this is up to you (if you supply your own)
         for attempt in range(self._arbitraryMaximumTries):
 
-            self.__ServerRequestCount += 1
+            self.statistics['serverRequests'] += 1
+
             resp = requests.request(httpmeth, url,
                                     auth=self.authTuple,
                                     data=data,
@@ -1085,6 +1127,7 @@ class _Numerous_ChunkedAPIIter:
             if thisId not in self.__dupfilter['prev']:
                 self.__dupfilter['current'][ thisId ] = 1  # only the key matters
                 break
+            self.nr.statistics['duplicatesFiltered'] += 1
             r = self.__getNextOne()     # try the next one
 
         return r
