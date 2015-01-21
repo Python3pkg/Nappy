@@ -695,7 +695,12 @@ class Numerous:
         # if we weren't told to back off, no need to retry
         if tparams['result-code'] != 429:
             # but if we are closing in on the limit then slow ourselves down
-            if rateleft < td:    # that's the arbitrary voluntary limit
+            # note that some errors don't communicate rateleft so we have to
+            # check for that as well (will be -1 here if wasn't sent to us)
+            #
+            # at constructor time our "throttle data" (td) was set up as the
+            # voluntary arbitrary limit
+            if rateleft >= 0 and rateleft < td: 
                 nr.statistics['throttleVoluntaryBackoff'] += 1
                 time.sleep(max(backoff, td - rateleft))
 
@@ -956,32 +961,26 @@ class Numerous:
             # told "Too Many Requests" then delay for a while and try again.
 
             try:
-                tp = { 'debug' : self.__debug,
-                       'attempt' : attempt,
-                       'rate-remaining' : int(resp.headers['X-Rate-Limit-Remaining']),
-                       'rate-reset' : int(resp.headers['X-Rate-Limit-Reset']),
-                       'result-code' : resp.status_code,
-                       'resp' : resp,
-                       'request' : { 'http-method' : httpmeth, 'url' : url } }
-
+               rateRemain = int(resp.headers['X-Rate-Limit-Remaining'])
+               rateReset = int(resp.headers['X-Rate-Limit-Reset'])
             #
-            # some errors from the server such as Not Authorized carry no
-            # rate information. No throttling policy applied in those cases. :)
-            #   KeyError is the real exception.
+            # some errors from the server such as Not Authorized carry no rate info
+            except (KeyError, ValueError):
+                rateRemain = -1
+                rateReset = -1    # doesn't really matter
 
-            except KeyError:
-                break
-
-            #   ValueError is probably a bug (the "int()" calls failed). 
-            #              Defend against that though I've never seen it happen.
-            except ValueError:
-                break
+            tp = { 'debug' : self.__debug,
+                   'attempt' : attempt,
+                   'rate-remaining' : rateRemain,
+                   'rate-reset' : rateReset,
+                   'result-code' : resp.status_code,
+                   'resp' : resp,
+                   'request' : { 'http-method' : httpmeth, 'url' : url } }
 
             td = self.__throttlePolicy[1]
             up = self.__throttlePolicy[2]
             if not self.__throttlePolicy[0](self, tp, td, up):
                 break
-
 
         goodCodes = api.get('success-codes', [ requests.codes.ok ])
 
