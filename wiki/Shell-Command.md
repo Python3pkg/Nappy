@@ -90,7 +90,8 @@ Note that in this case the `nr` command will sub-index multiple levels for you (
 Instead of just printing the value (by default) or a specific attribute specified with square brackets, you can print the entire attribute dictionary:
 
     % nr -n -j bozo
-    {"Results": [{"result": {"id": "579875221157343692", "unit": "", "value": 99, ... }]}
+    {"Results": [{"result": {"id": "579875221157343692", 
+                  "unit": "", "value": 99, ... }]}
 
 For clarity the full results have been elided; try it yourself to see everything that is in there.
 
@@ -115,7 +116,7 @@ in which case the top level list structure under "Results" will have two entries
         {
             "ID": "2141579335528632068", 
             "result": {
-                "description": "Random number 0 .. 99, updated every 30 minutes using random.org", 
+                "description": "Random number 0 .. 99", 
                 "id": "2141579335528632068", 
                 "label": "A Random Number", 
                 "updated": "2015-01-06T11:27:05.554Z", 
@@ -215,12 +216,18 @@ If you are in fact a bozo you can do things like this:
 
     % nr -wM ++ '{ "description" : "The label of this metric is +" }'
 
+and then for grins
+
+    % nr -wn -+ + +1
+
 which won't confuse anyone except for you.
 
-As a convenient shorthand, instead of specifying a full-on JSON set of attributes you specify either ONE of these:
+As a convenient shorthand, instead of specifying a full-on JSON set of attributes you may specify either ONE of these:
+
 * private - Creates the metric as an unlisted (i.e., _private_) metric. The default is listed (not private). Exactly the same as if you had specified `'{ "private" : true }'`
 * 2342 - (any float/integer value) - Creates the metric with the given initial value. The default is zero. Exactly the same as if you had specified `'{ "value" : 2342 }'`
 
+So, for example:
 
     % nr -wM +newMetric private
     6296105586510559349

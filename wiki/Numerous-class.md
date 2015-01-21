@@ -13,6 +13,8 @@ By default the server is located at 'api.numerousapp.com' but if you need to ove
 
     nr = Numerous(server='testbed.someotherserver.com')
 
+In addition to `apiKey` and `server` it is also possible to specify a custom rate-limiting/throttle policy. See [Rate Limits](https://github.com/outofmbufs/Nappy/wiki/Rate-Limits) for details.
+
 ## Public Attributes
 
 The only public attribute is `serverName` and it is informational only:
@@ -25,6 +27,7 @@ once you have instantiated a Numerous() setting `serverName` to anything else wi
 ## Methods
 
 * metric(metricId) - instantiate a NumerousMetric object.
+* metricByLabel(labelspec, matchType='FIRST') - alternate way to instantiate a NumerousMetric object by looking up a label instead of using an ID.
 * createMetric(label, value=None, attrs={}) - create a new metric (and return a NumerousMetric object).
 * metrics(userId=None) - get subscribed-to metrics
 * user(userId=None) - get Numerous user information.
@@ -50,7 +53,61 @@ Example usage:
 Instantiates a NumerousMetric object with the given metric ID. Typically you either "just know" the metric ID (e.g., for a particular metric you created/defined) or you found it via other API calls.
 
 Note that this method does not do any validation on the metricId. If the metricId is bogus you won't know until later when you perform operations with the resulting NumerousMetric.
-   
+
+In addition to the standard/numeric metric ID you can specify one of these alternate forms:
+```
+# Numerous App-specific metric URL:
+m = nr.metric('nmrs://metric/299336148273384') 
+
+# the "self" API link in the metric attributes:
+m = nr.metric('https://api.numerousapp.com/metrics/299336148273384')
+
+# the web view URL:
+m = nr.metric('http://n.numerousapp.com/m/1b8xa7fjg92r')
+```
+
+In each of these forms the proper metric ID is recovered from the URL by simply parsing out the URL fields (and decoding the base 36 web view URL). The NumerousMetric object is instantiated from that parsed/decoded metric ID. No extra server transactions are performed to accomplish this.
+
+### metricByLabel(labelspec, matchType='FIRST')
+Example usage:
+
+    # nr is a Numerous()
+    m = nr.metricByLabel('xyz')    
+
+This will look up your metrics (via the nr.metrics() iterator) and search for one with a label containing 'xyz' _anywhere within the label_ (see below for how to control the matching rules). If a metric is found the corresponding NumerousMetric object is returned (else None).
+
+There are four `matchType` values you can specify and three of them (including the default) treat the `labelspec` as a generalized unanchored regular expression. For example:
+
+    m = nr.metricByLabel('a')
+
+will match ANY metric that has an 'a' in its label. By default the `matchType` is 'FIRST' so the above call will return whatever metric happens to occur first (in an arbitrary server-defined order) and has the letter 'a' in its label, anywhere. 
+
+To match only a metric whose name is exactly 'a' you would have to specify:
+
+    m = nr.metricByLabel('^a$')
+
+which is almost equivalent to
+
+    m = nr.metricByLabel('a', matchType='STRING')
+
+except that the 'STRING' variant will throw an exception if there are multiple matches (whereas the other variant returns an arbitrarily-defined first match)
+
+The four valid values for matchType are:
+
+* matchType='FIRST' - the default. The `labelspec` is used as a python regular expression and a corresponding NumerousMetric() object is instantiated based on the first metric label that matches. There is no way to predict what match will be 'FIRST' if there are multiple metrics that match.
+
+* matchType='ONE' - Your entire metric list (i.e., what nr.metrics() iterates) is searched. If there is exactly one match the corresponding NumerousMetric() is returned. If there is more than one match then an exception (`NumerousMetricConflictError`) is thrown. 
+
+* matchType='BEST' - the "best" match is returned, defined arbitrarily in an implementation-specific way.
+
+* matchType='STRING' - in this case `labelspec` is treated as an ordinary string and it must exactly match one metric label. In other words the matching criteria is the string comparison `str1 == str2` with no regexp interpretation. If it matches more than one metric label a `NumerousMetricConflictError` will be thrown.
+
+Please note that `matchType` values are all upper-case and are case-sensitive. Specifying `matchType='One'` for example will throw an exception.
+
+For any `matchType` except for 'STRING', the `labelspec` is a python regular expression interpreted using the [`search`](https://docs.python.org/3/library/re.html#re.search) method from the python `re` class. This means it will match any substring of the label unless you specifically anchor it with `^` (start of label) or `$` (end of label). Any regular expression syntax understood by `re.search` may be used in `labelspec`.
+
+In general, the `metricByLabel` method is mostly useful as a convenience when experimenting interactively in a python session. If used "for real" be aware that any `matchType` except for 'FIRST' requires iterating through the entire set of your metrics (metrics produced by the `nr.metrics` iterator). This requires at least one extra server API invocation and may require more if you have many metrics. Also there is no guarantee of label uniqueness; you can easily create two metrics with the same label. You may want to use the `matchType` 'ONE' to catch an ambiguous match.
+
 ### createMetric(label, value=None, attrs={})
 Example usage:
 
@@ -150,7 +207,7 @@ The proper way to write that is:
     except NumerousError as e:
         print("Cannot contact server. Reason: {}".format(e.reason))
 
-Strictly speaking other exceptions might be raised, especially if the problem is a lower-level networking problem (e.g., if the network conenction is offline); write your `except` clauses more generally if catching these is important to you (vs having them cause an uncaught exception). Or, more simply, just a naked `nr.ping()` call (not wrapped inside a `try`) and allow any Exceptions to cause a fatal exit error.
+Strictly speaking other exceptions might be raised, especially if the problem is a lower-level networking problem (e.g., if the network connection is offline); write your `except` clauses more generally if catching these is important to you (vs having them cause an uncaught exception). Or, more simply, just a naked `nr.ping()` call (not wrapped inside a `try`) and allow any Exceptions to cause a fatal exit error.
 
 ### debug(lvl=1)
 Example usage:
@@ -161,4 +218,3 @@ Example usage:
     nr.debug(prev)
 
 would end up showing you what operation is used for ping, for example.
-

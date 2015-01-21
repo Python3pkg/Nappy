@@ -8,7 +8,9 @@ where `id` should be a string representation of a metric ID and `nr` should be a
     nr = Numerous()
     m = NumerousMetric('123123123', nr)   # equivalent to m = nr.metric('123123123')
 
-would set up m as a NumerousMetric with metric ID '123123123'.
+would set up m as a NumerousMetric with metric ID '123123123'. 
+
+See the `metric` method in class `Numerous` for a more complete discussion of allowable types of metric IDs.
 
 ## Public Attributes
 * `id` - the metric ID (string form)
@@ -131,11 +133,19 @@ See the NumerousApp API documentation for details about the attributes of each o
 ### update(dict, overwriteAll=False)
 Example usage:
 
-    m.update({ "description" : "this is a new description of the metric" })
+    newdict = m.update({ "description" : "this is a new description of the metric" })
 
 Updates the metric attributes on the server. Only some attributes can be updated this way; consult the NumerousApp API documentation for details. In particular, you can NOT update the `value` this way; use `write()`.
 
-Because of the REST nature of the API, any values you do not specify in the server's update API call will be (re)set to initial values. This is not what you usually want. Therefore this method doesn't just write the `dict` you supply, but rather reads the current metric dictionary, merges your `dict` into it, and writes the merged dictionary back to the server. If instead you really want your dict to just be written as-is to the server, specify `overwriteAll=True`.
+The server returns a dictionary representing all of the metrics attributes (regardless of whether they were updated or not) and that dictionary (`newdict` above) is the return value of this method.
+
+Because of the REST nature of the API, any values you do not specify in the server's update API call will be (re)set to initial values. This is not what you usually want. Therefore this method doesn't just write the `dict` you supply, but rather reads the current metric dictionary, merges your `dict` into it, and writes the merged dictionary back to the server. 
+
+If instead you really want your dict to just be written as-is to the server, specify `overwriteAll=True`. For example:
+
+    m.update({ "units" : "blivets" }, overwriteAll=True)
+
+will also have the side effect of deleting any description and setting private to False (and possibly other side effects as defined by the server's rules for metric attribute defaults).
 
 ### like()
 Example usage:

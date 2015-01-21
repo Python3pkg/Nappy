@@ -12,6 +12,7 @@ The code works in either major version (2.x or 3.x) of python.
 * [Numerous class](https://github.com/outofmbufs/Nappy/wiki/Numerous-class)
 * [NumerousMetric class](https://github.com/outofmbufs/Nappy/wiki/NumerousMetric-class)
 * [Exceptions](https://github.com/outofmbufs/Nappy/wiki/Exceptions)
+* [Rate Limits](https://github.com/outofmbufs/Nappy/wiki/Rate-Limits)
 * [Shell Command](https://github.com/outofmbufs/Nappy/wiki/Shell-Command)
 * [Test Suite](https://github.com/outofmbufs/Nappy/wiki/Test-Suite)
 * [To Do](https://github.com/outofmbufs/Nappy/wiki/To-Do)

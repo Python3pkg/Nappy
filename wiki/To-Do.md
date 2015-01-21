@@ -1,11 +1,6 @@
 # To Do
 Things that still need to be done, or at least might be useful if done.
 
-## Rate Limiting
-I have an implementation of rate limiting that handles 429 "Too Many Requests" from the server and also implements a throttling policy designed to prevent you from hitting that limit as you get close (by observing the `X-Rate-Limit-Remaining` headers returned by the server).
-
-At the present time the NumerousApp server isn't enforcing the rate limits so I have been unable to test this code. Therefore I'm not releasing it yet. Once NumerousApp starts enforcing rate limits I will publish the rate limit aware code.
-
 ## Exception Wrap Subclass
 By design the Numerous and NumerousMetric classes bubble up most errors as Exceptions and do not hide low-level errors some of which are a little silly. 
 
@@ -26,13 +21,6 @@ So I think there should be two subclasses, NumerousWrap and NumerousMetricWrap, 
             return True
 
 and so forth, overriding (wrapping) just those methods that raise exceptions and handling the "we don't really care" cases accordingly.
-
-## More convenience functions
-It would be nice (for interactive / debugging / testing / development) to be able to access a metric by label name, e.g.
-
-    m = nr.metric(metricByName('bozo'))
-
-Obviously names aren't guaranteed to be unique. C'est la vie; the metricByName() function would just arbitrarily return one of them (or could throw an exception). It would be handy if metricByName() did some wildcarding too.
 
 ## caching?
 Wondering if it is worth creating a caching class that would allow you to do a bunch of things to a metric and then commit() the results. Seems like a lot of work for no good reason though. I've gone back and forth on this.
