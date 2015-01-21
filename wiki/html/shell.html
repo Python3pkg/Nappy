@@ -1,0 +1,254 @@
+<h1>nr - the shell command</h1>
+<p>This command started out very simply and evolved over time into a "do everything" command. I will illustrate what it can do by way of some examples rather than trying to exhaustively document it.</p>
+<h2>Installation</h2>
+<p>The file shell-cmd/nr is a simple wrapper and might not even be needed at all depending on how you installed everything. If you installed the numerous.py file using pip (or pip3) so that it is in your system library path then you can delete the "nr" file and rename "nr.py" to "nr" and just use the python file directly.</p>
+<p>If you installed the numerous.py file into your own personal directory tree somewhere (e.g., ~/lib/numerous.py) then you will want to keep the shell wrapper and edit it accordingly. This is all somewhat self-explanatory if you look at the files.</p>
+<h2>Using nr</h2>
+<h3>Credentials - your API Key</h3>
+<p>You need a NumerousApp API key to use nr. The best practice is to put that key into a file somewhere and then specify it to nr via the -c option. Something like this:</p>
+<pre><code>% echo "nmrs_3Z82bdf934g1" &gt; ~/.numerousCred      # do this one time
+% nr -c ~/.numerousCred                           # and pass it in like this
+</code></pre>
+<p>See <a href="apikey.html">APIKey Management</a> for all the other ways you can specify an API Key.</p>
+<p>The examples throughout the rest of this document will omit the "-c ~/.numerousCred" argument. Be aware that you MUST specify your API key somehow, either by the -c argument or by having NUMEROUSAPIKEY set in your environment.</p>
+<h3>Metrics by name vs metrics by ID</h3>
+<p>The underlying NumerousApp API always accesses metrics by a unique identifier which usually looks like a long string of digits. Of course, humans prefer to access things by name. In NumerousApp the "name" of a metric is actually called its <code>label</code>. Labels are not necessarily unique, but usually within the context of a single user's set of metrics they are. The nr command allows you to access metrics by name (label) using the -n option. Thus, to read a metric called 'bozo' you can do this:</p>
+<pre><code>% nr -n bozo
+17
+</code></pre>
+<p>If there is more than one metric with a label of 'bozo' in your metrics then this will read one of them, and there is no good way of predicting which one it will be. Caveat User.</p>
+<p>As a convenient way to get a translation of metric names (labels) into IDs, specifying -n by itself will list all of your metrics and their corresponding labels:</p>
+<pre><code>% nr -n
+579875221157343692 bozo
+2141579335528632068 A Random Number
+9208972516053673667 Crude Oil
+</code></pre>
+<h3>Reading a metric</h3>
+<p>Simply specify the metric ID or use -n and specify a label:</p>
+<pre><code>% nr -n bozo
+17
+</code></pre>
+<p>or</p>
+<pre><code>% nr 579875221157343692
+17
+</code></pre>
+<p>Note that the -n command is a global option. If you are reading three metrics by name:</p>
+<pre><code>% nr -n bozo 'A Random Number' 'Crude Oil'
+17
+19
+46.53
+</code></pre>
+<p>It turns out that <code>-n</code> will simply pass your "name" (label) to the NumerousApp server unchanged if it cannot translate it, so you can (sort of) combine names (labels) and IDs in one command:</p>
+<pre><code>% nr -n bozo 579875221157343692
+17
+17
+</code></pre>
+<p>However this is somewhat susceptible to confusion if you (foolishly) define a metric with a label that matches some other metric's ID. So don't do both of those things (i.e., either don't define metric labels that match some other metric's ID, or don't mix/match labels and IDs while using <code>-n</code>). </p>
+<p>The "nr" command allows you to request print out of a specific attribute when you read a metric so another way to translate a name (label) into an ID is:</p>
+<pre><code>% nr -n 'bozo[id]'
+579875221157343692
+</code></pre>
+<p>The square brackets characters are shell metacharacters so you will usually want to quote them just to be safe. However it turns out you can almost always get away with using them naked. Proceed naked at your own risk:</p>
+<pre><code>% nr -n bozo[id]
+579875221157343692
+
+% nr -n A Random Number[id]
+ERROR / Invalid Metric: A
+ERROR / Invalid Metric: Random
+ERROR / Invalid Metric: Number
+</code></pre>
+<p>which shows the wisdom of being in the habit of using quotes:</p>
+<pre><code>% nr -n 'A Random Number[id]'
+2141579335528632068
+</code></pre>
+<p>The square bracket feature is especially useful to find the web URL of a metric:</p>
+<pre><code>% nr -n 'A Random Number[web]'
+http://n.numerousapp.com/m/g9quiku9vuv8
+</code></pre>
+<p>Note that in this case the <code>nr</code> command will sub-index multiple levels for you (the 'web' attribute is really contained within a 'links' attribute and the <code>nr</code> command does not accept '[links][web]' as a syntax; rather, it just takes whatever you give in square brackets and tries to "find something somewhere" that matches it -- in practice this always does what you want but if you are concerned you are free to write python code instead).</p>
+<h3>Display JSON</h3>
+<p>Instead of just printing the value (by default) or a specific attribute specified with square brackets, you can print the entire attribute dictionary:</p>
+<pre><code>% nr -n -j bozo
+{"Results": [{"result": {"id": "579875221157343692", 
+              "unit": "", "value": 99, ... }]}
+</code></pre>
+<p>For clarity the full results have been elided; try it yourself to see everything that is in there.</p>
+<p>You can see that the results are packaged into a few layers. That allows for the case where you've asked for multiple metrics, e.g.:</p>
+<pre><code>% nr -n -j bozo 'A Random Number'
+</code></pre>
+<p>in which case the top level list structure under "Results" will have two entries, and each entry will have a "result" (the actual result from the server) and an "ID" (the identifier that was used to obtain that result). Here is a (partially elided) pretty-print of the output of that command:
+<code>{
+    "Results": [
+        {
+            "ID": "579875221157343692", 
+            "result": {
+                "description": "is a clown", 
+                "id": "579875221157343692", 
+                "label": "bozo", 
+                "updated": "2015-01-12T14:39:13.952Z", 
+                "value": 99, 
+            }
+        }, 
+        {
+            "ID": "2141579335528632068", 
+            "result": {
+                "description": "Random number 0 .. 99", 
+                "id": "2141579335528632068", 
+                "label": "A Random Number", 
+                "updated": "2015-01-06T11:27:05.554Z", 
+                "value": 85, 
+            }
+        }
+    ]
+}</code>
+As mentioned, for brevity the complete list of attributes has not been shown above; the actual command output includes all attributes for the given metrics.</p>
+<p>Each element of the Results array is a two-element dictionary, containing an "ID" (that was used to request the information) and a "result" (that came back from the server). </p>
+<p>The <code>-j</code> (or <code>--json</code>) option requests that the output be in JSON format. This generally works as a modification of almost any output request. For example to see your entire set of metrics in JSON form (one JSON object per line per metric):</p>
+<pre><code>% nr -j
+</code></pre>
+<h3>Writing a value to a metric</h3>
+<p>Simple:</p>
+<pre><code>% nr -w 579875221157343692 42
+42
+</code></pre>
+<p>or, if you prefer to use the label:</p>
+<pre><code>% nr -w -n bozo 43
+43
+</code></pre>
+<p>The new value of the metric is output. While this is obvious in the simple case, it becomes more useful in the "add" case. The NumerousApp API includes a feature that allows you to add a value to a metric. This is expressed via the '+' (or <code>--plus</code>) option in nr:</p>
+<pre><code>% nr -w -n bozo 0        # start at zero
+0
+% nr -w -n -+ bozo 1     # add one
+1
+% nr -w -n -+ bozo 1     # add one again
+2
+</code></pre>
+<p>By the way, per the usual command syntax standards, you can combine all those options together:</p>
+<pre><code>% nr -wn+ bozo 1
+3
+</code></pre>
+<p>As a shorthand you can omit the -w when you are using -+, as it is implied:</p>
+<pre><code>% nr -n+ bozo 1
+4
+</code></pre>
+<p>The other option on the write command is "only if it changed". The advantage (in some cases) of using this variation is that you avoid cluttering up the metric's event collection with a bunch of updates that didn't change the value.</p>
+<p>For example, perhaps you are updating a stockquote every 15 minutes. But sometimes the markets are closed. Even if you write your automatic update code to avoid running on Saturday/Sunday and at night, sometimes the markets are closed on Mondays. Rather than clutter up the metric event collection with many events that represent no change at all you can specify "only update the metric if the value is changed". This is specified with the <code>-y</code> / <code>--onlyIf</code> option:</p>
+<pre><code>% nr -nwy bozo 0
+0
+% nr -nwy bozo 0
+NoChange
+</code></pre>
+<p>Note that the exit status will be 1 in the NoChange case.</p>
+<h3>Writing Multiple Metrics</h3>
+<p>You can write multiple metrics in one command:</p>
+<pre><code>% nr -wn bozo 1 bonzo 2
+1
+2
+</code></pre>
+<p>or even write the same metric twice. This, for example, is a test of the <code>-y</code> option:</p>
+<pre><code>% nr -wn bozo 0
+0
+% nr -wny bozo 1 bozo 1
+1
+NoChange
+</code></pre>
+<h3>Updating metric attributes</h3>
+<p>To update the attributes of a metric we use the -M option combined with -w. In general every <code>nr</code> operation that writes something requires the <code>-w</code> flag, so think of the <code>-M</code> flag in this case as specifying "what to write" while the <code>-w</code> flag is simply specifying that we are going to write <em>something</em>.</p>
+<pre><code>% nr -wMn bozo '{ "description" : "has red hair" }'
+{ ... json output of updated metric attributes }
+</code></pre>
+<p>You specify what to update as a JSON object with the attributes that you want to update. The command uses the <code>NumerousMetric.update</code> method which takes your attributes and merges them with the rest of the metric's attributes (by reading them from the server first). There is no syntax in the nr command for overriding the "read - merge - write" behavior (which can be overridden in the method call; there's just no syntax implemented for specifying that in this command).</p>
+<p>Note that you cannot update the metric value this way (enforced by the NumerousApp server).</p>
+<pre><code>% nr -wMn bozo '{ "value" : 62 }'
+</code></pre>
+<p>appears to work (does not return an error) but you will notice that the value is not updated. The NumerousApp server silently ignores the "value" attribute in update operations.</p>
+<h3>Creating a Metric</h3>
+<p>Creating a metric is treated in <code>nr</code> as a variation on updating a metric. To create a metric put a '+' (plus sign) character in front of the new metric name:</p>
+<pre><code>% nr -wM +bozo2 '{ "value" : 819, "private" : true }'
+968229978347882872
+</code></pre>
+<p>The '+' character is stripped off and is not part of the metric name. Obviously you cannot create a new metric by specifying an ID, so the "-n" is not required in this case (it is optional / ignored).</p>
+<p>If you are in fact a bozo you can do things like this:</p>
+<pre><code>% nr -wM ++ '{ "description" : "The label of this metric is +" }'
+</code></pre>
+<p>and then for grins</p>
+<pre><code>% nr -wn -+ + +1
+</code></pre>
+<p>which won't confuse anyone except for you.</p>
+<p>As a convenient shorthand, instead of specifying a full-on JSON set of attributes you may specify either ONE of these:</p>
+<ul>
+<li>private - Creates the metric as an unlisted (i.e., <em>private</em>) metric. The default is listed (not private). Exactly the same as if you had specified <code>'{ "private" : true }'</code></li>
+<li>2342 - (any float/integer value) - Creates the metric with the given initial value. The default is zero. Exactly the same as if you had specified <code>'{ "value" : 2342 }'</code></li>
+</ul>
+<p>So, for example:</p>
+<pre><code>% nr -wM +newMetric private
+6296105586510559349
+
+% nr -wM +newMetric 2342
+822646564275439228
+</code></pre>
+<p>It is not possible to specify an initial value and <code>private</code> at the same time using these shorthands; you must give a JSON attribute dictionary in that case.</p>
+<h3>Deleting a metric</h3>
+<p>You delete metrics using the <code>--killmetric</code> option. There is no single-letter option variant for this operation. Also the operation <em>requires</em> a metric ID and will not work with <code>-n</code> -- this is on purpose to protect you against the potential ambiguity inherent in metric labels.</p>
+<pre><code>% nr -wM +newmetric private
+6920028165809384377
+
+% nr --killmetric 6920028165809384377
+Deleted
+</code></pre>
+<h3>Interactions</h3>
+<p>You read interactions using -I and write them using -wI:</p>
+<pre><code>% nr -nI bozo
+like 3457529302618327156 None 2015-01-12T14:26:04.618Z 7180748783917522265 -- None
+like 6434586778323266772 None 2015-01-12T14:25:57.237Z 7180748783917522265 -- None
+</code></pre>
+<p>If you plan to do anything programmatic with this output I strongly suggest you use the JSON form and parse it accordingly:</p>
+<pre><code>% nr -nIj bozo
+{ "Results": ... output elided }
+</code></pre>
+<p>To write an interaction you must specify the kind ("like" / "error" / "comment") and any kind-specific data required ("commentBody" for error or comment). Examples:</p>
+<pre><code>% nr -nIw bozo '{ "kind" : "like" }'
+% nr -nIw bozo '{ "kind" : "error" , "commentBody" : "Yikes - this is an error message" }'
+% nr -nIw bozo '{ "kind" : "comment" , "commentBody" : "This is a comment" }'
+</code></pre>
+<p>As a shorthand you can specify a "naked" string and it will be interpreted as a comment:</p>
+<pre><code>% nr -nIw bozo "This is an easier way to make a comment"
+</code></pre>
+<p>Note the quotes because the comment string has to be one shell argument.</p>
+<h3>Displaying Events</h3>
+<p>Interactions are likes, errors, and comments. Events are the value updates. You can display all the value updates for a metric:</p>
+<pre><code>% nr -En 'A Random Number'
+74 @ 2015-01-12T17:43:17.438Z by 7180748783917522265
+19 @ 2015-01-12T17:13:13.581Z by 7180748783917522265
+85 @ 2015-01-12T16:43:13.972Z by 7180748783917522265
+ ... much more output elided
+</code></pre>
+<p>As with interactions, if you are going to do anything programmatic with this output I strongly encourage you to use the JSON output form.</p>
+<p>A metric that is updated frequently could have hundreds of events; you may wish to limit the output. The <code>--limit</code> option (also available as <code>-t</code>) does this:</p>
+<pre><code>% nr -En --limit 2 'A Random Number'
+74 @ 2015-01-12T17:43:17.438Z by 7180748783917522265
+19 @ 2015-01-12T17:13:13.581Z by 7180748783917522265
+</code></pre>
+<p>That is the full, non-elided, output of the command; only the most recent two events are printed (because of the <code>--limit 2</code> command option).</p>
+<p>Thus a silly alternate way to print out a metric value is:</p>
+<pre><code>% nr -En --limit 1 'A Random Number[value]'
+74
+</code></pre>
+<p>Note that using --limit is quite preferable to piping the command into <code>head</code>. The <code>--limit</code> option will make the command stop querying the server once it has all the results it plans to print whereas piping the command into <code>head</code> will cause the command to gather all the items (possibly making many calls to the server) only for them to then be discarded on output. Use <code>--limit</code> not <code>head</code>.</p>
+<h3>Deleting Things</h3>
+<p>You can delete events and interactions by their event or interaction ID respectively. You do that with <code>--delete</code> and either <code>-I</code> or <code>-E</code> as appropriate. </p>
+<p>For example if '9118113586950422173' is an event ID in the metric bozo then:</p>
+<pre><code>% nr -En --delete bozo 9118113586950422173
+579875221157343692[9118113586950422173] -- DELETED
+</code></pre>
+<p>deletes that event. You have to know if you are deleting an event (<code>--delete -E</code>) or an interaction (<code>--delete -I</code>); this is just how the NumerousApp API works. </p>
+<h3>Suppressing output</h3>
+<p>The -q option suppresses all ordinary output. Sometimes useful in scripts when writing. You can even use -q when reading; this may or may not be silly depending on whether your goal is simply to test the exit status.</p>
+<h3>Displaying the API key</h3>
+<p>If you need the API Key extracted via <code>numerousKey()</code> you use <code>-k</code>:</p>
+<pre><code>% nr -k
+nmrs_X587wFqs8z9v
+</code></pre>
+<p>No other arguments/commands are processed.</p>
+<h3>More</h3>
+<p>Still not yet documented; read the shell script source: photos, users, subscriptions, stream...</p>

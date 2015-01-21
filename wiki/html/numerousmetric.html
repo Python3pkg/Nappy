@@ -1,0 +1,213 @@
+<h1>class NumerousMetric</h1>
+<p>The more common way to instantiate a NumerousMetric is via the <code>metric()</code> method in class <code>Numerous</code>. However you can also instantiate a NumerousMetric this way if you prefer:</p>
+<pre><code>m = NumerousMetric(id, nr)
+</code></pre>
+<p>where <code>id</code> should be a string representation of a metric ID and <code>nr</code> should be a <code>Numerous()</code>. So, for example:</p>
+<pre><code>nr = Numerous()
+m = NumerousMetric('123123123', nr)   # equivalent to m = nr.metric('123123123')
+</code></pre>
+<p>would set up m as a NumerousMetric with metric ID '123123123'. </p>
+<p>See the <code>metric</code> method in class <code>Numerous</code> for a more complete discussion of allowable types of metric IDs.</p>
+<h2>Public Attributes</h2>
+<ul>
+<li><code>id</code> - the metric ID (string form)</li>
+<li><code>nr</code> - the Numerous() object used to talk to the server.</li>
+</ul>
+<h2>Exceptions</h2>
+<p>All of the methods that talk to the server can raise NumerousError or any of the subclasses (e.g., NumerousAuthError).</p>
+<p>A few notes about error codes: in general, an invalid metric ID will cause an error 400 (Bad Request) if the metric ID is ill-formed, and error 404 (Not Found) if the metric ID "looks like" a metric ID but doesn't correspond to an accessible metric. These are, of course, determined by the server and may be implementation-specific observations.</p>
+<p>Thus:</p>
+<pre><code>m = NumerousMetric('123123123', nr)
+m.read()
+</code></pre>
+<p>is likely to raise a NumerousError with <code>code</code> 404 (assuming '123123123' doesn't exist as a valid metric ID), whereas: </p>
+<pre><code>m = NumerousMetric('totallyBogus', nr)
+m.read()
+</code></pre>
+<p>is likely to raise a NumerousError with <code>code</code> 400.</p>
+<p>You can use the <code>validate</code> method if you need to try to figure out whether a given metric is accessible without worrying about these sorts of details.</p>
+<h2>Methods</h2>
+<ul>
+<li>read</li>
+<li>write</li>
+<li>validate</li>
+<li>events</li>
+<li>stream</li>
+<li>interactions</li>
+<li>subscriptions</li>
+<li>subscription</li>
+<li>subscribe</li>
+<li>update</li>
+<li>like</li>
+<li>sendError</li>
+<li>comment</li>
+<li>photo</li>
+<li>photoDelete</li>
+<li>event</li>
+<li>eventDelete</li>
+<li>interaction</li>
+<li>interactionDelete</li>
+<li>label</li>
+<li>webURL</li>
+<li>photoURL</li>
+<li>crushKillDestroy</li>
+</ul>
+<h3>read(dictionary=False)</h3>
+<p>Example usage:</p>
+<pre><code>v = m.read()
+</code></pre>
+<p>Reads the current value of the metric from the server. Returns the metric value, or returns the entire metric attribute dictionary if <code>dictionary=True</code>.</p>
+<h3>write(newval, onlyIf=False, add=False, dictionary=False)</h3>
+<p>Example usage:</p>
+<pre><code>m.write(17)
+</code></pre>
+<p>Writes <code>newval</code> to the metric. The additional arguments are:</p>
+<ul>
+<li><code>onlyIf</code> - specifying <code>onlyIf=True</code> will cause the metric to only be updated if <code>newval</code> is different than the currently stored value. </li>
+</ul>
+<p>This is useful when periodically refreshing a metric value periodically in an automated fashion, as you can avoid cluttering up the metric event list with updates that are to the same value (i.e., no change). If <code>newval</code> is indeed not different than the current value then a <code>NumerousMetricConflictError</code> will be raised. So, for example:</p>
+<pre><code>m.write(17)
+try:
+    m.write(17, onlyIf=True)
+    print("Rewrote 17")
+except NumerousMetricConflictError:
+    print("No update; it was already 17")
+</code></pre>
+<p>will print the "No update" message, not the "Rewrote 17" message (assuming no one else asynchronously changed the metric while we were running this code). The onlyIf operation is implemented, atomically, as a server-side operation via the API.</p>
+<ul>
+<li><code>add</code> - specifying <code>add=True</code> causes <code>newval</code> to be added to the current value of the metric. </li>
+</ul>
+<p>Specifying <code>add</code> is nearly equivalent to this code:</p>
+<pre><code>v = m.read()
+m.write(v + newval)
+</code></pre>
+<p>however the <code>add</code> operation is implemented atomically as a server-side operation via an explicit feature of the API. Several clients simultaneously adding to a metric using <code>add</code> will always give the correct result, whereas implementing the <code>add</code> yourself via two separate read/write operations leaves a race condition that could cause an incorrect final total if multiple people are doing it to one metric at the same time.</p>
+<ul>
+<li><code>dictionary=False</code> - specifying <code>dictionary=True</code> will return the entire metric attribute dictionary (reflecting the post-updated state); otherwise just the naked value is returned.</li>
+</ul>
+<p>Exceptions:
+* As already noted, raises NumerousMetricConflictError if <code>onlyIf=True</code> and there was no value change.</p>
+<h3>validate()</h3>
+<p>Example usage:</p>
+<pre><code>if not m.validate():
+    print("The metric is not valid")
+</code></pre>
+<p>Returns True if the metric is accessible; returns False if the metric cannot be accessed because of problems with the metric's ID (e.g., "Not Found"). Can also raise exceptions for other reasons (e.g., NumerousAuthError if the API key is no good).</p>
+<h3>events() / stream() / interactions() / subscriptions()</h3>
+<p>These are all similar so are all described together here. Each of these four methods is an iterator. They produce the expected items one at a time using a lazy-fetch algorithm to deal with the server's "chunking" API as described in the NumerousApp API documentation.</p>
+<p>For example, to compute the average value of a metric that has had many updates done to it:</p>
+<pre><code>n = 0
+total = 0
+for ev in m.events():
+    total += ev['value']
+    n += 1
+print(total/n)
+</code></pre>
+<p>There are no arguments to any of the iterators.</p>
+<ul>
+<li>events() - iterator for metric events. Events are value updates.</li>
+<li>interactions() - iterator for metric interactions. Interactions are comments, likes, and errors.</li>
+<li>stream() - iterator for the metric stream. The stream is a time-ordered merge of events and interactions.</li>
+<li>subscriptions() - iterator for the metric's subscriptions. </li>
+</ul>
+<p>See the NumerousApp API documentation for details about the attributes of each of these types of items.</p>
+<h3>update(dict, overwriteAll=False)</h3>
+<p>Example usage:</p>
+<pre><code>newdict = m.update({ "description" : "this is a new description of the metric" })
+</code></pre>
+<p>Updates the metric attributes on the server. Only some attributes can be updated this way; consult the NumerousApp API documentation for details. In particular, you can NOT update the <code>value</code> this way; use <code>write()</code>.</p>
+<p>The server returns a dictionary representing all of the metrics attributes (regardless of whether they were updated or not) and that dictionary (<code>newdict</code> above) is the return value of this method.</p>
+<p>Because of the REST nature of the API, any values you do not specify in the server's update API call will be (re)set to initial values. This is not what you usually want. Therefore this method doesn't just write the <code>dict</code> you supply, but rather reads the current metric dictionary, merges your <code>dict</code> into it, and writes the merged dictionary back to the server. </p>
+<p>If instead you really want your dict to just be written as-is to the server, specify <code>overwriteAll=True</code>. For example:</p>
+<pre><code>m.update({ "units" : "blivets" }, overwriteAll=True)
+</code></pre>
+<p>will also have the side effect of deleting any description and setting private to False (and possibly other side effects as defined by the server's rules for metric attribute defaults).</p>
+<h3>like()</h3>
+<p>Example usage:</p>
+<pre><code>likeID = m.like()
+</code></pre>
+<p>Likes a metric. Returns the ID of the created "like" interaction. There is no unlike/dislike method but if you want to undo a like:</p>
+<pre><code>m.interactionDelete(likeID)
+</code></pre>
+<p>where <code>likeID</code> is the ID returned by a previous like() operation.</p>
+<h3>sendError(errText)</h3>
+<p>Example usage:</p>
+<pre><code>errorID = m.sendError("This is the error message")
+</code></pre>
+<p>Creates an "error" interaction on a metric. Returns the ID of the created interaction.  </p>
+<h3>comment(cmtText)</h3>
+<p>Example usage:</p>
+<pre><code>cmtID = m.comment("This is the comment")
+</code></pre>
+<p>Creates a "comment" interaction on a metric. Returns the ID of the created interaction.  </p>
+<h3>photo(imgInfo, mimeType="image/jpeg")</h3>
+<p>Example usage:</p>
+<pre><code>mdict = m.photo(open('something.jpg','rb'))    # set user's photo from an opened image file
+
+# or also can set it from raw image data
+# (this example is not a complete image)
+photoData = b"\x47\x49\x46\x38\x39\x61 ... and so forth"
+mdict = m.photo(photoData, mimeType="image/gif")
+</code></pre>
+<p>Sets the metric's photo from <code>imgInfo</code> which should either be an open file or raw image bytes. Note that in python3 you must open the file in 'rb' mode to avoid translation of the image bytes into Unicode (this is a generic python3 issue not specific to the Numerous class methods).</p>
+<p>Returns the updated metric attributes.</p>
+<h3>photoDelete()</h3>
+<p>Example usage:</p>
+<pre><code>m.photoDelete()
+</code></pre>
+<p>Deletes the photo from a metric. No return value. </p>
+<p>Exceptions:
+* NumerousError - <code>code</code> 404 if there is no metric photo.</p>
+<h3>event(evID)</h3>
+<p>Example usage:</p>
+<pre><code>evdict = m.event(evID)
+</code></pre>
+<p>Returns the attributes of a single metric event. Events are value updates.</p>
+<p>Exceptions:
+* NumerousError - <code>code</code> 404 if the event does not exist.</p>
+<h3>eventDelete(evID)</h3>
+<p>Example usage:</p>
+<pre><code>m.eventDelete(evID)
+</code></pre>
+<p>Deletes the specified event from a metric.</p>
+<p>Exceptions:
+* NumerousError - <code>code</code> 404 if the event does not exist.</p>
+<h3>interaction(interactionID)</h3>
+<p>Example usage:</p>
+<pre><code>idict = m.interaction(interactionID)
+</code></pre>
+<p>Returns the attributes of a single metric interaction. Interactions are likes, comments, and errors.</p>
+<p>Exceptions:
+* NumerousError - <code>code</code> 404 if the interaction does not exist.</p>
+<h3>interactionDelete(interactionID)</h3>
+<p>Example usage:</p>
+<pre><code>m.interactionDelete(interactionID)
+</code></pre>
+<p>Deletes the specified interaction from a metric.</p>
+<p>Exceptions:
+* NumerousError - <code>code</code> 404 if the interaction does not exist.</p>
+<h3>label()</h3>
+<p>Example usage:</p>
+<pre><code>print("The metric label is {}".format(m.label()))
+</code></pre>
+<p>Convenience function. Returns the metric label. Exactly equivalent to:</p>
+<pre><code>m.read(dictionary=True)['label']
+</code></pre>
+<h3>webURL()</h3>
+<p>Example usage:</p>
+<pre><code>print("You could surf this metric with your browser here: {}".format(m.webURL()))
+</code></pre>
+<p>Convenience function. Returns the URL that can be used to access the metric value via a browser. Exactly equivalent to:</p>
+<pre><code>m.read(dictionary=True)['links']['web']
+</code></pre>
+<h3>photoURL()</h3>
+<p>Example usage:</p>
+<pre><code>print("Here is the storage for the metric photo: {}".format(m.photoURL()))
+</code></pre>
+<p>Convenience function. Takes the 'photoURL' from the metric attributes and performs an HTTP GET on it, to resolve out any redirects. Returns the final (non-redirecting) URL. The benefit of doing this is that the final URL is accessible without any API Key, whereas the 'photoURL' attribute contains a URL which is handled by the NumerousApp API server and still requires authentication to access.</p>
+<p>Returns None if there is no metric photo.</p>
+<h3>crushKillDestroy()</h3>
+<p>Example usage:</p>
+<pre><code>m.crushKillDestroy()
+</code></pre>
+<p>Deletes a metric from the server. Permanent. There is no undo.</p>

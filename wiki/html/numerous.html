@@ -1,0 +1,180 @@
+<h1>class Numerous</h1>
+<p>The Numerous class is how you get started:</p>
+<pre><code>from numerous import Numerous
+nr = Numerous()
+</code></pre>
+<p>If you call <code>Numerous()</code> with no arguments, then the apiKey will come from the NUMEROUSAPIKEY environment variable. See the discussion of <a href="apikey.html"><code>numerousKey()</code></a> for details on how that works. If you don't want to use the NUMEROUSAPIKEY environment variable (or the other <code>numerousKey()</code> data sources) you can just specify an apiKey yourself:</p>
+<pre><code>nr = Numerous(apiKey="nmrs_4V23js92bsdf")
+</code></pre>
+<p>By default the server is located at 'api.numerousapp.com' but if you need to override this for any reason:</p>
+<pre><code>nr = Numerous(server='testbed.someotherserver.com')
+</code></pre>
+<p>In addition to <code>apiKey</code> and <code>server</code> it is also possible to specify a custom rate-limiting/throttle policy. See <a href="ratelimits.html">Rate Limits</a> for details.</p>
+<h2>Public Attributes</h2>
+<p>The only public attribute is <code>serverName</code> and it is informational only:</p>
+<pre><code>nr = Numerous()
+print("Using {} as the server".format(nr.serverName))
+</code></pre>
+<p>once you have instantiated a Numerous() setting <code>serverName</code> to anything else will NOT change the server being used.</p>
+<h2>Methods</h2>
+<ul>
+<li>metric(metricId) - instantiate a NumerousMetric object.</li>
+<li>metricByLabel(labelspec, matchType='FIRST') - alternate way to instantiate a NumerousMetric object by looking up a label instead of using an ID.</li>
+<li>createMetric(label, value=None, attrs={}) - create a new metric (and return a NumerousMetric object).</li>
+<li>metrics(userId=None) - get subscribed-to metrics</li>
+<li>user(userId=None) - get Numerous user information.</li>
+<li>userPhoto(imageDataOrOpenFile, mimeType="image/jpeg") - set your user photo.</li>
+<li>subscriptions(userId=None) - get your metric subscriptions.</li>
+<li>mostPopular(count=None) - get the list of the most popular metrics.</li>
+<li>ping() - test your connectivity to the Numerous server.</li>
+<li>debug(lvl=1) - Turn on/off debugging output.</li>
+</ul>
+<h2>General Exceptions</h2>
+<p>Any API that communicates with the server can raise these specific Exceptions:
+<em> NumerousAuthError: Authentication failure. Likely cause: API key is (or has become) no good.
+</em> NumerousError: Any other server error including HTTP failures.</p>
+<p>Other Exceptions are also possible, especially various lower-level exceptions you might see from network libraries if you lose network connectivity.</p>
+<h3>metric(metricId)</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous() 
+m = nr.metric('9201292516052673667')      # specifying a metric ID
+</code></pre>
+<p>Instantiates a NumerousMetric object with the given metric ID. Typically you either "just know" the metric ID (e.g., for a particular metric you created/defined) or you found it via other API calls.</p>
+<p>Note that this method does not do any validation on the metricId. If the metricId is bogus you won't know until later when you perform operations with the resulting NumerousMetric.</p>
+<p>In addition to the standard/numeric metric ID you can specify one of these alternate forms:
+</p>
+<pre><code>
+# Numerous App-specific metric URL:
+m = nr.metric('nmrs://metric/299336148273384')
+
+# the "self" API link in the metric attributes:
+m = nr.metric('https://api.numerousapp.com/metrics/299336148273384')
+
+# the web view URL:
+m = nr.metric('http://n.numerousapp.com/m/1b8xa7fjg92r')
+</code></pre>
+
+<p>In each of these forms the proper metric ID is recovered from the URL by simply parsing out the URL fields (and decoding the base 36 web view URL). The NumerousMetric object is instantiated from that parsed/decoded metric ID. No extra server transactions are performed to accomplish this.</p>
+<h3>metricByLabel(labelspec, matchType='FIRST')</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+m = nr.metricByLabel('xyz')
+</code></pre>
+<p>This will look up your metrics (via the nr.metrics() iterator) and search for one with a label containing 'xyz' <em>anywhere within the label</em> (see below for how to control the matching rules). If a metric is found the corresponding NumerousMetric object is returned (else None).</p>
+<p>There are four <code>matchType</code> values you can specify and three of them (including the default) treat the <code>labelspec</code> as a generalized unanchored regular expression. For example:</p>
+<pre><code>m = nr.metricByLabel('a')
+</code></pre>
+<p>will match ANY metric that has an 'a' in its label. By default the <code>matchType</code> is 'FIRST' so the above call will return whatever metric happens to occur first (in an arbitrary server-defined order) and has the letter 'a' in its label, anywhere. </p>
+<p>To match only a metric whose name is exactly 'a' you would have to specify:</p>
+<pre><code>m = nr.metricByLabel('^a$')
+</code></pre>
+<p>which is almost equivalent to</p>
+<pre><code>m = nr.metricByLabel('a', matchType='STRING')
+</code></pre>
+<p>except that the 'STRING' variant will throw an exception if there are multiple matches (whereas the other variant returns an arbitrarily-defined first match)</p>
+<p>The four valid values for matchType are:</p>
+<ul>
+<li>
+<p>matchType='FIRST' - the default. The <code>labelspec</code> is used as a python regular expression and a corresponding NumerousMetric() object is instantiated based on the first metric label that matches. There is no way to predict what match will be 'FIRST' if there are multiple metrics that match.</p>
+</li>
+<li>
+<p>matchType='ONE' - Your entire metric list (i.e., what nr.metrics() iterates) is searched. If there is exactly one match the corresponding NumerousMetric() is returned. If there is more than one match then an exception (<code>NumerousMetricConflictError</code>) is thrown. </p>
+</li>
+<li>
+<p>matchType='BEST' - the "best" match is returned, defined arbitrarily in an implementation-specific way.</p>
+</li>
+<li>
+<p>matchType='STRING' - in this case <code>labelspec</code> is treated as an ordinary string and it must exactly match one metric label. In other words the matching criteria is the string comparison <code>str1 == str2</code> with no regexp interpretation. If it matches more than one metric label a <code>NumerousMetricConflictError</code> will be thrown.</p>
+</li>
+</ul>
+<p>Please note that <code>matchType</code> values are all upper-case and are case-sensitive. Specifying <code>matchType='One'</code> for example will throw an exception.</p>
+<p>For any <code>matchType</code> except for 'STRING', the <code>labelspec</code> is a python regular expression interpreted using the <a href="https://docs.python.org/3/library/re.html#re.search"><code>search</code></a> method from the python <code>re</code> class. This means it will match any substring of the label unless you specifically anchor it with <code>^</code> (start of label) or <code>$</code> (end of label). Any regular expression syntax understood by <code>re.search</code> may be used in <code>labelspec</code>.</p>
+<p>In general, the <code>metricByLabel</code> method is mostly useful as a convenience when experimenting interactively in a python session. If used "for real" be aware that any <code>matchType</code> except for 'FIRST' requires iterating through the entire set of your metrics (metrics produced by the <code>nr.metrics</code> iterator). This requires at least one extra server API invocation and may require more if you have many metrics. Also there is no guarantee of label uniqueness; you can easily create two metrics with the same label. You may want to use the <code>matchType</code> 'ONE' to catch an ambiguous match.</p>
+<h3>createMetric(label, value=None, attrs={})</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+m = nr.createMetric("bozo", value=17, attrs={ "description" : "the clown" })
+</code></pre>
+<p>Creates a new metric on the server and returns a corresponding NumerousMetric object. The <code>label</code> argument is required; <code>value</code> is optional (default 0) and <code>attrs</code> is optional. Unspecified metric attributes will default as described in the NumerousApp API documentation. Note, in particular, that the server default for "private" is False.</p>
+<h3>metrics(userId=None)</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+for md in nr.metrics():
+    print(md['label'],md['id'])
+</code></pre>
+<p>Iterator. Yields the metrics (in attribute dictionary form) for the given user (default is yourself).</p>
+<h3>user(userId=None)</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+u = nr.user()
+print(u['fullName'])
+</code></pre>
+<p>Returns a dictionary of user attributes as described in the NumerousApp API documentation. If a userId is specified, returns the dictionary for that user; otherwise it returns the dictionary for the user corresponding to the API key used with <code>nr</code>.</p>
+<h3>userPhoto(imgInfo, mimeType="image/jpeg")</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+u = nr.photo(open('something.jpg','rb'))    # set user's photo from an opened image file
+
+# or also can set it from raw image data
+# (this example is not a complete image)
+photoData = b"\x47\x49\x46\x38\x39\x61 ... and so forth"
+u = nr.photo(photoData, mimeType="image/gif")
+</code></pre>
+<p>Sets the user's photo from <code>imgInfo</code> which should either be an open file or raw image bytes. Note that in python3 you must open the file in 'rb' mode to avoid translation of the image bytes into Unicode (this is a generic python3 issue not specific to the Numerous class methods).</p>
+<p>Returns the updated user attributes.</p>
+<h3>subscriptions(userId=None)</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+for s in nr.subscriptions():
+    print(s)
+
+# get subscriptions for some other user
+for s in nr.subscriptions(userId='3479283572920175101'):
+    print(s)
+</code></pre>
+<p>This is an iterator which returns the subscription objects for yourself or another user. Each subscription object is a dictionary containing attributes as described in the NumerousAPI documentation.</p>
+<p>Here is a simple program that would print out the raw values of all of the metrics you are subscribed to (all of the metrics that normally show when you bring up the Numerous app on your phone):</p>
+<pre><code>from numerous import Numerous
+nr = Numerous()     # gets credential information from NUMEROUSAPIKEY environment variable
+
+for s in nr.subscriptions():
+    m = nr.metric(s['metricId'])
+    mDict = m.read(dictionary=True)         # get the entire dictionary of the metric
+    print(mDict['label'], mDict['value'])   # really should do more formatting
+</code></pre>
+<p>As described in the API documentation, the server may return your subscriptions in multiple "chunks" if you have a lot of them. The subscriptions() method performs lazy fetching as needed. No call to the server is made until you request the first subscription from the iterator, and subsequent chunks (if any) are not fetched until you iterate past the subscriptions that were returned in the first chunk. All of this is handled transparently inside the <code>subscription()</code> method.</p>
+<p>Additional specific Exceptions:
+<em> NumerousChunkingError: An unexpected server error occurred while fetching any chunk of subscriptions other than the first chunk. This error is never "expected" but it can happen if the server returns an error while we are fetching the second or subsequent "chunk" of subscriptions. Essentially this is communicating an iteration that has been interrupted by some server or network error and is therefore incomplete. 
+</em> An error that occurs on the first chunk will raise one of the standard exceptions such as NumerousError or NumerousAuthError. Note that if you attempt to get the subscriptions from a non-existent userId you will get a <code>NumerousError</code> exception and the code will be 403 (HTTP Forbidden). </p>
+<h3>mostPopular(count=None)</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+populars = nr.mostPopular(count=3)
+
+print("The most popular metric is {}".format(populars[0]['label']))
+</code></pre>
+<p>Returns a list of the <code>count</code> most-popular metrics, sorted by numer of subscribers. This is not an iterator; it returns the full list. There is an undocumented server-imposed limit on <code>count</code>; at the time of this writing the server will not return more than 20 metrics via the API.</p>
+<h3>ping()</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous()
+nr.ping()
+</code></pre>
+<p>Verifies connectivity with the NumerousApp server by performing some operation (that has no side effects, such as reading the user object). If the operation succeeds, <code>ping()</code> returns True. If the operation fails an exception is raised. Thus the following code is ineffective:</p>
+<pre><code>if not nr.ping():
+    print("Cannot contact server")
+</code></pre>
+<p>The proper way to write that is:</p>
+<pre><code>try:
+    nr.ping()
+except NumerousError as e:
+    print("Cannot contact server. Reason: {}".format(e.reason))
+</code></pre>
+<p>Strictly speaking other exceptions might be raised, especially if the problem is a lower-level networking problem (e.g., if the network connection is offline); write your <code>except</code> clauses more generally if catching these is important to you (vs having them cause an uncaught exception). Or, more simply, just a naked <code>nr.ping()</code> call (not wrapped inside a <code>try</code>) and allow any Exceptions to cause a fatal exit error.</p>
+<h3>debug(lvl=1)</h3>
+<p>Example usage:</p>
+<pre><code># nr is a Numerous
+prev = nr.debug(1)
+nr.ping()
+nr.debug(prev)
+</code></pre>
+<p>would end up showing you what operation is used for ping, for example.</p>

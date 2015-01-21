@@ -1,0 +1,170 @@
+<h1>Rate Limits</h1>
+<p>The NumerousApp server limits API calls to some number of calls per some period of time. Every API request made to the server returns several header elements relating to rate limiting. Although these header elements are not exposed via the Numerous class API, it is helpful to understand how they work. The two most important header elements are:</p>
+<ul>
+<li><code>X-Rate-Limit-Remaining</code>: How many more API calls you can make without hitting the limit.</li>
+<li><code>X-Rate-Limit-Reset</code>: How many seconds it will be until a new quota of API calls is given out to you.</li>
+</ul>
+<p>At the time of this writing the server limit parameters are set up so that a client can make 300 calls per minute. So, for example, after you make your first API call your <code>X-Rate-Limit-Remaining</code> would be 299 and the <code>X-Rate-Limit-Reset</code> time would be somewhere between 1 and 59 seconds (implementation detail: the server seems to synchronize these to the top of the minute). At the time indicated by <code>X-Rate-Limit-Reset</code> a new quota of API calls will be allocated (<code>X-Rate-Limit-Remaining</code> will be refreshed to a higher value).</p>
+<p>In English, this means as long as your API key generates fewer than 300 requests per minute (under the current server parameters) then you'll never see any rate limiting effects or errors.</p>
+<p>If you exceed the rate limits the server will fail your request with an HTTP 429 "Too Many Requests" error code. If you enter this regime of response behavior the 429 error code will occur for all requests until enough time (<code>X-Rate-Limit-Reset</code>) elapses so that you get a fresh <code>X-Rate-Limit-Remaining</code>.</p>
+<p>In extreme server overload cases you may also get an HTTP 500 "Too Busy" error code.</p>
+<p>Rate limiting is on a "per-client" basis, which appears to mean "per API key" (not per client IP address).</p>
+<h2>Default Throttling</h2>
+<p>To prevent you from hitting these limits, and to handle the cases where you DO hit the limits, the Numerous class implements a default rate throttling policy. The default rate throttling policy works like this:</p>
+<ul>
+<li>
+<p>If you hit a 429 "Too Many Requests" limit or a 500 "Too Busy" error the client will delay for some amount of time and retry the request. This is transparent to you, you do not see the 429 or 500 code you just experience a time delay before your API call completes.</p>
+</li>
+<li>
+<p>If you are "getting close" (defined arbitrarily inside the code) to the server-communicated limit (X-Rate-Limit-Remaining) then you will be delayed a short amount of time. The idea behind this "voluntary" restraint is that not all clients (i.e., other implementations) may know how to handle the 429/500 error codes, so if we are getting close we want to voluntarily slow ourselves down for a little while to try to avoid hitting the "too many" condition if possible. Another advantage of voluntary restraint is to spread a possibly long X-Rate-Limit-Reset time across multiple API calls. One way or another if you've made too many API calls too quickly you are going to have to wait for more rate allocation, but it will seem less onerous to wait a little bit extra across multiple API calls than to wait the entire delay time on just one. </p>
+</li>
+</ul>
+<p>When deciding to delay, the amount of time to wait is computed using a combination of X-Rate-Limit-Reset info (what the server told us to wait to get a new allocation of capacity) and an added exponential backoff factor based on how many times we have retried this particular request. So, for example, if you get a 429 we will wait how long the server tells us to wait plus a small amount "to be sure" (e.g., 2 extra seconds). If after that retry the code experiences ANOTHER 429 (during the retry of this same request), it will again wait however long the server has (once again) told us to wait, but will add an even longer "just to be sure" backoff time on top of that. Eventually the request will either go through or the code will give up and allow the 429 error to bubble up to you as an exception.</p>
+<p>In practice, with multiple retries, the server-communicated X-Rate-Limit-Reset information, and the exponential backoff, there are no realistic scenarios in which you will see a 429 or 500 HTTP error come at you as an exception from an API call. You may, however, experience delays.</p>
+<h2>Overriding the throttle policy</h2>
+<p>The default throttle policy can be replaced by a custom policy
+specified at Numerous() construction time. Custom throttle policies
+can completely replace the built-in default policy or can also simply
+augment it by performing some decisions and deferring others to the
+built-in policy.</p>
+
+<p>A custom throttle function is called after <strong>every</strong>
+API interaction with the server. It is called with four arguments
+corresponding to this interface:</p>
+
+<pre><code>def throttleExample(nr, tparams, td, up):
+    # do something here
+    return False        # see text; return True or False
+</code></pre>
+
+<p>It is <strong>very important</strong> to note and understand that
+the throttle function is invoked <strong>after</strong> the API
+interaction with the server, not before. </p>
+
+<p>The four throttle function arguments are:</p>
+
+<ul>
+<li>
+<code>nr</code> - The Numerous() object. Most throttle functions won't need this but it is provided anyway.</li>
+<li>
+<code>tparams</code> - A dictionary containing data about the request and the rate limit fields returned by the server.</li>
+<li>
+<code>td</code> - Arbitrary data specific to the custom throttle function. This gets specified when the throttle function is first set up.</li>
+<li>
+<code>up</code> - Parameters required to call "up" the chain. Used by throttle policies that want to invoke the system default throttle policy in some cases.</li>
+</ul>
+
+<p>The return value controls the retry logic. If the throttle function
+returns False then no further actions are taken and the response from
+the server becomes the eventual response for the API method
+invoked.</p>
+
+<p>If the throttle function returns True then the API response from
+the server will be discarded and the original API call will be
+retried. It is only proper to return True when the response from the
+server is an error code (e.g. 429 / "Too Many Requests"); a throttle
+function erroneously returning True when the underlying API call
+actually succeeded is likely to cause obscure bugs. For example,
+returning True when the API call was a <code>metric.comment()</code>
+invocation that succeeded will cause the API code to retry the request
+and set a second, identical comment. Indeed simply always returning
+True will break the API completely and trap it in an infinite retry
+loop.</p>
+
+<blockquote>
+<p>As an aside: the code that invokes throttle policies contains an
+arbitrary retry limit, partially to guard against this scenario;
+however, it is still true that mistakenly returning True can break
+things in very obscure ways. Be very careful when implementing a
+custom throttle policy function.</p>
+</blockquote>
+
+<p>As already mentioned, a throttle function is
+invoked <strong>after</strong> each and every API interaction with the
+server. The function's job is to handle specific error codes such as
+"429 / Too Many Requests" and also possibly make other policy
+decisions about API rates.  </p>
+
+<p>The <code>tparams</code> dictionary contains the following keys with data as described:</p>
+
+<ul>
+<li>
+<code>tparams['attempt']</code> - The attempt number. This will be zero if the attempt is the first time through for this particular operation. If, for example, the server returned a 429 error code and the throttle function returned True (requesting a retry), then the next time through <code>tparams['attempt']</code> would be 1.</li>
+<li>
+<code>tparams['result-code']</code> - the (integer) HTTP result code that came back from the server.</li>
+<li>
+<code>tparams['resp']</code> - the complete <code>requests</code> library HTTP Response object.</li>
+<li>
+<code>tparams['rate-remaining']</code> - the (integer) value of X-Rate-Limit-Remaining returned by the NumerousApp server. In some error cases it is possible for this to be missing in the server response in which case this parameter will be -1.</li>
+<li>
+<code>tparams['rate-reset']</code> - the (integer) value of X-Rate-Limit-Reset returned by the NumerousApp server. In some error cases it is possible for this to be missing in the server response in which case this parameter will be -1.</li>
+<li>
+<code>tparams['debug']</code> - the (integer) debug level set in the Numerous() object. Zero is no debugging.</li>
+<li>
+<code>tparams['request']</code> - a dictionary containing general information about the specific request that was made. Note: this is not a <code>requests</code> object; it is simply a dictionary containing two keys: 'http-method' indicates what type of operation was performed (e.g., 'GET', 'POST', etc) and 'url' contains the complete URL.</li>
+</ul>
+
+<p>The <code>td</code> parameter passed to a throttle function comes from whatever was specified when the throttle function was set up. Given a throttle function <code>throttleExample</code> defined as above, the Numerous() call to install it as a throttle function looks like this:</p>
+
+<pre><code>nr = Numerous(throttle = throttleExample)
+</code></pre>
+
+<p>If the throttle function needs some data (for policy decisions or whatever purpose) that can be supplied as <code>throttleData</code> at constructor time, and it becomes the <code>td</code> parameter at invocation time. So, for example:</p>
+
+<pre><code>def bozoThrottle(nr, tparams, td, up):
+    print(td)
+    return False
+
+nr = Numerous(throttle = bozoThrottle, throttleData="bozo the clown!")
+</code></pre>
+
+<p>would, quite annoyingly, cause "bozo the clown!" to be printed after every single API request was sent to the NumerousApp server.</p>
+
+<p>Finally, the <code>up</code> parameter is a triple containing:</p>
+
+<ul>
+<li>
+<code>up[0]</code> - the system default throttle policy function.</li>
+<li>
+<code>up[1]</code> - the <code>td</code> parameter to be supplied to the <code>up[0]</code> function.</li>
+<li>
+<code>up[2]</code> - the <code>up</code> parameter to be supplied to the <code>up[0]</code> function.</li>
+</ul>
+
+<p>At the present time there is no way to stack/unstack throttle policies (they can only be set up at Numerous() construction time); however this interface allows for an eventual "chain" of such policies if that makes sense in the future.</p>
+
+<p>Given all this information, we can now write a no-op custom throttle policy that simply invokes the original system default policy but counts API invocations (as an example):</p>
+
+<pre><code>invocationCounts = { 'counter' : 0 }
+
+def throttleWrapper(nr, tparams, td, up):
+    td['counter'] += 1
+    return up[0](nr, tparams, up[1], up[2])
+
+nr = Numerous(throttle = throttleWrapper, throttleData=invocationCounts)
+</code></pre>
+
+<p>after that, looking at invocationCounts['counter'] would tell you how many times API requests had been sent to the server.</p>
+
+<p>Another example could be to impose a 10 second delay on any authorization failure (HTTP 401 "Unauthorized"). That could look like this:</p>
+
+<pre><code>def delayAuthFailure(nr, tparams, td, up):
+    if tparams['result-code'] == 401:
+        time.sleep(10)
+        return False        # no retry either
+    else:
+        # everything else defer to default handler
+        return up[0](nr, tparams, up[1], up[2])  
+
+
+nr = Numerous(throttle=delayAuthFailure, apiKey='boguskey')
+
+nr.ping()   # will fail with an exception but also take an extra 10 seconds to do so
+
+</code></pre>
+
+<p>Given all this, it is still likely that the most useful custom throttle policy is the "no throttling" policy, which would implement no limits on API calls and simply allow the 429 ("Too Many Requests") errors from the server to bubble back up as NumerousError exceptions if they occur. Such a policy can be specified with this trivial lambda:</p>
+
+<pre><code>nr = Numerous(throttle = lambda nr,tp,td,up: False)
+</code></pre>
+
