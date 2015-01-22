@@ -536,7 +536,7 @@ def valueParser(s):
 
 
 #
-# FIELD notation is overloaded to either by an actual field
+# FIELD notation is overloaded to either be an actual field
 #       name (e.g., 'label', 'authorId', etc) or sometimes it
 #       is a raw event or interaction ID and we need to know difference
 # Arguably, this is a silly hack and we should have made more explicit
@@ -668,6 +668,17 @@ def doPhotoWrite(metricOrNR, imageFName):
 
 
 
+# XXX it is important that these keys cannot appear in a base36 encoding
+#     Wow that was an obscure bug, when this was used with this mspec:
+#               http://n.numerousapp.com/m/1bzm892hvg4id
+#     that happened to include 'id' (the previous key used here)
+#     and that false-positived an "if 'id' in mspec" test
+#
+# The whole way all this works is a hack that obviously grew over time :)
+#
+mspecIDKey = '_*id*_'
+mspecFIELDKey = '_*field*_'
+
 #
 # Sometimes it is m1/v1 pairs sometimes just metrics
 #
@@ -685,7 +696,7 @@ else:
                 print("bad metric specification",m)
                 exit(1)
             # nuke the trailing ']' on the field spec
-            m = { "id" : x[0], "field" : x[1][:-1] }
+            m = { mspecIDKey : x[0], mspecFIELDKey : x[1][:-1] }
         metrics.append(m)
 
 
@@ -721,7 +732,7 @@ if len(metrics) == 0:
         u = nrServer.user()
         if not args.quiet:
             if args.json:
-                print(u)
+                print(json.dumps(u))
             else:
                 print("User: {userName} [ {fullName} ], id: {id}".format(**u))
 
@@ -732,7 +743,7 @@ if len(metrics) == 0:
         if not args.quiet:
             for v in vlist:
                 if args.json:
-                    print(v)
+                    print(json.dumps(v))
                 elif args.name:
                     print(v['id'] + " " + v['label'])
                 else:
@@ -745,8 +756,8 @@ elif args.user and args.write and args.photo:
 else:
     while len(metrics):
         mspec = metrics.pop(0)
-        if 'id' in mspec:
-            r = { 'ID' : mspec['id'], 'FIELD' : mspec['field'] }
+        if mspecIDKey in mspec:
+            r = { 'ID' : mspec[mspecIDKey], 'FIELD' : mspec[mspecFIELDKey] }
         else:
             r = { 'ID' : mspec }
 
@@ -941,7 +952,7 @@ else:
         elif args.subs:
             try:
                 # metricID[+] means get all the subscriptions for the metric
-                if 'field' in mspec and mspec['field'] == '+':
+                if mspecFIELDKey in mspec and mspec[mspecFIELDKey] == '+':
                     slist = []
                     for s in metric.subscriptions():
                         slist.append(s)
@@ -950,8 +961,8 @@ else:
                     d = metric.subscription()
                     if args.json:
                         r['result'] = d
-                    elif 'field' in mspec:
-                        r['result'] = findSomethingSomewhere(d, mspec['field'])
+                    elif mspecFIELDKey in mspec:
+                        r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
                     else:
                         r['result'] = d
             except NumerousError:
@@ -966,8 +977,8 @@ else:
                 d = metric.read(dictionary = True)
                 if args.json:
                     r['result'] = d
-                elif 'field' in mspec:
-                    r['result'] = findSomethingSomewhere(d, mspec['field'])
+                elif mspecFIELDKey in mspec:
+                    r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
                 else:
                     r['result'] = d['value']
             except NumerousError:
