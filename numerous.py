@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - --- 
 
-_NumerousClassVersionString = "20150120-1.4.1"
+_NumerousClassVersionString = "20150122-1.4.x1x"
 
 #
 # metric object
@@ -963,11 +963,15 @@ class Numerous:
             try:
                rateRemain = int(resp.headers['X-Rate-Limit-Remaining'])
                rateReset = int(resp.headers['X-Rate-Limit-Reset'])
-            #
-            # some errors from the server such as Not Authorized carry no rate info
+
+               # make these available in statistics as an FYI too
+               self.statistics['rate-remaining'] = rateRemain
+               self.statistics['rate-reset'] = rateReset
+
             except (KeyError, ValueError):
+                # some server errors (e.g., Not Authorized) give no rate info
                 rateRemain = -1
-                rateReset = -1    # doesn't really matter
+                rateReset = -1    
 
             tp = { 'debug' : self.__debug,
                    'attempt' : attempt,
@@ -1059,6 +1063,14 @@ class _Numerous_ChunkedAPIIter:
         # in the initial case is the initial chunk)
         self.__list = []
         self.__nextURL = apiOP['base-url']
+
+        # the algorithm itself doesn't really need to know this
+        # BUT... for some better error reporting and also for 
+        #        some statistics (used for testing/debugging)
+        #        it's helpful to distinguish the first chunk
+        #        from any subsequent additional chunks.
+        # The code is elegant; testing and helping you find errors sucks :)
+        self.__firstTime = True
 
         # see discussion about duplicate filtering elsewhere
         self.__dupfilter = None
@@ -1160,14 +1172,23 @@ class _Numerous_ChunkedAPIIter:
 
             try:
                 v = self.nr._simpleAPI(apiOP, url=self.__nextURL)
+
+                # statistics, helpful for testing/debugging
+                if self.__firstTime:
+                    self.nr.statistics['first-chunks'] += 1
+                    self.__firstTime = False
+                else:
+                    self.nr.statistics['additional-chunks'] += 1
+
             except NumerousError as v:
                 # this is a bit hokey but if you have a totally bogus
                 # metric object this might be the first place you find
-                # out about it... so figure out if we're actually getting
-                # the very first (base-url) fetch and if so, report the
-                # more generic NumerousError that might (hopefully) make
-                # more sense to you
-                if self.__nextURL == apiOP['base-url']:
+                # out about it... so if this is the first time through
+                # report a NumerousError that might (hopefully) make
+                # more sense to you (otherwise you see "Getting next chunk"
+                # and you might have no idea what that means when in reality
+                # it meant your metric was bad)
+                if self.__firstTime:
                     if v.code == 400:      # "Bad Request" is bad metric
                         raise NumerousError(v, v.code, "Bad Metric")
                     else:
