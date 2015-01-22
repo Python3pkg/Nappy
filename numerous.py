@@ -1,10 +1,10 @@
 #
 # Copyright (c) 2015, Neil Webber
-# All rights reserved. 
+# All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 # 1. Redistributions of source code must retain the above copyright
 # notice, this list of conditions and the following disclaimer.
 #
@@ -30,13 +30,13 @@
 #      Numerous       -- server-level operations
 #      NumerousMetric -- individual metrics
 #
-# PYTHON3: 
+# PYTHON3:
 # This code is written and maintained for python3.
 #
 # PYTHON2:
-# I backported to python2 (only needed two minor hacks); it works. 
-# I primarily develop/maintain this code using python3 but I do keep 
-# running my test script against python2 as well. 
+# I backported to python2 (only needed two minor hacks); it works.
+# I primarily develop/maintain this code using python3 but I do keep
+# running my test script against python2 as well.
 # It should work but: Caveat User.
 #
 # #################
@@ -45,7 +45,7 @@ import json
 import sys              # only for version in user-agent and sys.stdin creds helper
 import os               # for getting environment in creds helper
 import requests         # (cheerleading: wow this made the HTTP code simple)
-import logging          # needed for debug output 
+import logging          # needed for debug output
 import time
 import re               # for metricByLabel regex handling
 
@@ -55,10 +55,10 @@ from collections import defaultdict
 # --- - --- - --- only needed to enable HTTP debugging output
 try:
   from http.client import HTTPConnection
-except ImportError: 
+except ImportError:
   # You are using python2, proceed at your own risk
   from httplib import HTTPConnection
-# --- - --- - --- 
+# --- - --- - ---
 
 _NumerousClassVersionString = "20150122-1.4.x1x"
 
@@ -71,8 +71,8 @@ _NumerousClassVersionString = "20150122-1.4.x1x"
 class NumerousMetric:
     #
     # __APIInfo: Metric API information (URL etc details)
-    # 
-    # Describes endpoints for simpleAPI(see). 
+    #
+    # Describes endpoints for simpleAPI(see).
     # Also contains iterator details (next URL and "list" names)
     #
     # {} substitutions are filled in via **kwargs in getAPI calls.
@@ -204,7 +204,7 @@ class NumerousMetric:
         self.id = id
         self.nr = numerous
 
-    # Just a small wrapper around nr._makeAPIcontext, to use our API table 
+    # Just a small wrapper around nr._makeAPIcontext, to use our API table
     # (vs the Numerous class one) and to automatically supply {metricId}
     def __getAPI(self, what, whichOp, **kwargs):
         info = self.__APIInfo[what]
@@ -224,7 +224,7 @@ class NumerousMetric:
     # that actually IS a metricId, this might be useful. Realize that
     # even a valid metric can be deleted out from under and become invalid.
     #
-    # Reads the metric, catches the specific exceptions that occur for 
+    # Reads the metric, catches the specific exceptions that occur for
     # invalid metric IDs, and returns True/False. Other exceptions mean
     # something else went awry (server down, bad authentication, etc).
     def validate(self):
@@ -232,7 +232,7 @@ class NumerousMetric:
             ignored = self.read()
             return True
         except NumerousError as v:
-            # bad request (400) is a completely bogus metric ID whereas 
+            # bad request (400) is a completely bogus metric ID whereas
             # not found (404) is a well-formed ID that simply does not exist
             if v.code == 400 or v.code == 404:
                 return False
@@ -280,7 +280,7 @@ class NumerousMetric:
     # You can, however, stop that with overwriteAll=True
     #
     # NOTE that you really can only subscribe yourself, so there
-    #      really isn't much point in specifying a userId 
+    #      really isn't much point in specifying a userId
     def subscribe(self, dict, userId=None, overwriteAll=False):
         if overwriteAll:
             params = {}
@@ -464,7 +464,7 @@ class Numerous:
     __APIInfo = {}
 
     # POST to this to create a metric
-    __APIInfo['create'] = { 
+    __APIInfo['create'] = {
         'endpoint' : '/v1/metrics',
         'POST' : {
             'success-codes' : [ 201 ]
@@ -474,7 +474,7 @@ class Numerous:
     # GET a user's metric collection
     __APIInfo['metrics-collection'] = {
         'endpoint' : '/v2/users/{userId}/metrics',
-        'defaults' : { 
+        'defaults' : {
             'userId': 'me'            # default userId meaning "myself"
         },
         'GET' : {
@@ -486,7 +486,7 @@ class Numerous:
     # subscriptions at the user level
     __APIInfo['subscriptions'] = {
         'endpoint' : '/v2/users/{userId}/subscriptions',
-        'defaults' : { 
+        'defaults' : {
             'userId': 'me'            # default userId meaning "myself"
         },
         'GET' : {
@@ -497,7 +497,7 @@ class Numerous:
 
     __APIInfo['user'] = {
         'endpoint' : '/v1/users/{userId}',
-        'defaults' : { 
+        'defaults' : {
             'userId': 'me'            # default userId meaning "myself"
         },
         'photo' : {
@@ -510,7 +510,7 @@ class Numerous:
     # most popular metrics
     __APIInfo['popular'] = {
         'endpoint' : '/v1/metrics/popular?count={count}',
-        'defaults' : { 
+        'defaults' : {
             'count' : 10
         }
         # no entry needed for GET because no special codes etc
@@ -528,8 +528,8 @@ class Numerous:
         rslt = {}
         rslt['http-method'] = whichOp
 
-        # Build up the substitutions from the defaults (if any) and non-None 
-        # kwargs. Note: we are careful not to be modifying the underlying 
+        # Build up the substitutions from the defaults (if any) and non-None
+        # kwargs. Note: we are careful not to be modifying the underlying
         # dictionaries (i.e., we are making a new one)
         substitutions = {}
         dflts = info.get('defaults', {})
@@ -564,8 +564,8 @@ class Numerous:
         rslt['base-url'] = (endpoint + appendThis).format(**substitutions)
         return rslt
 
-    # 
-    # server, if specified,  should be a naked FQDN 
+    #
+    # server, if specified,  should be a naked FQDN
     # (e.g., 'api.numerousapp.com')
     #
     # The default throttle policy simply tries to obey the server's rate
@@ -599,7 +599,7 @@ class Numerous:
         # where "data" is the throttle policy specific data
         # and "up" is the next (recursive) policy tuple
         #
-        # The system throttleDefault policy uses the data ("40") as 
+        # The system throttleDefault policy uses the data ("40") as
         # the "arbitrary voluntary limit" for when you are getting close to the limit
         self.__throttlePolicy = (self.__throttleDefault, 40, None)
 
@@ -629,7 +629,7 @@ class Numerous:
     # Invoked after the response has been received and we are supposed to
     # return True to force a retry or False to accept this response as-is.
     #
-    # The policy this implements: 
+    # The policy this implements:
     #    if the server failed with too busy, do backoff based on attempt number
     #
     #    if we are "getting close" to our limit, arbitrarily delay ourselves
@@ -660,7 +660,7 @@ class Numerous:
     # the fact that we are invoked AFTER each request:
     #    False : simply means "don't do more retries". It does not imply anything
     #            about the success or failure of the request; it simply means that
-    #            this most recent request (response) is the one to "take" as 
+    #            this most recent request (response) is the one to "take" as
     #            the final answer
     #
     #    True  : means that the response is, indeed, to be interpreted as some
@@ -700,15 +700,15 @@ class Numerous:
             #
             # at constructor time our "throttle data" (td) was set up as the
             # voluntary arbitrary limit
-            if rateleft >= 0 and rateleft < td: 
+            if rateleft >= 0 and rateleft < td:
                 nr.statistics['throttleVoluntaryBackoff'] += 1
                 time.sleep(max(backoff, td - rateleft))
 
             return False               # no retry
 
 
-        # decide how long to delay ... we just wait for as long as the 
-        # server told us to (plus "backoff" seconds slop to really be sure we 
+        # decide how long to delay ... we just wait for as long as the
+        # server told us to (plus "backoff" seconds slop to really be sure we
         # aren't back too soon)
         nr.statistics['throttle429'] += 1
         time.sleep(tparams['rate-reset'] + backoff)
@@ -752,12 +752,12 @@ class Numerous:
     #
     # You will (of course) eventually get exceptions and errors when used.
     # Even with a valid metricId your metric object can still become
-    # stale if someone deletes it out from under you.  One reason we do 
-    # not bother to enforce "validity" here, since even if it is valid now 
+    # stale if someone deletes it out from under you.  One reason we do
+    # not bother to enforce "validity" here, since even if it is valid now
     # it might not be valid anytime immediately after tested.
     #
-    # If validity is important to you use metric.validate() but understand 
-    # that even that is no guarantee of validity since a metric can be 
+    # If validity is important to you use metric.validate() but understand
+    # that even that is no guarantee of validity since a metric can be
     # deleted out from under you at any time.
 
     def metric(self, metricId):
@@ -774,14 +774,14 @@ class Numerous:
     #  * BEST   - the "best" match will be used, where "best" is arbitrarily
     #             defined as the longest match. If there are multiple similar
     #             length matches you will get one of them (unpredictable which)
-    #  * ONE    - There must be exactly one match or NumerousMetricConflictError
+    #  * ONE    - Must be exactly one match or NumerousMetricConflictError
     #  * STRING - don't do any regexp. Match the labelspec exactly.
-    # 
+    #
     #  * anything else is an error
     #
 
     def metricByLabel(self, labelspec, matchType='FIRST'):
-        def raiseConflict(s1,s2): 
+        def raiseConflict(s1,s2):
             raise NumerousMetricConflictError([s1, s2], 409, "More than one match")
 
         bestMatch = ( None, 0 )
@@ -824,7 +824,7 @@ class Numerous:
         return rv
 
 
-    # iterator for the entire metrics collection. 
+    # iterator for the entire metrics collection.
     # By default gets your own metrics list but you can specify other users
     def metrics(self, userId=None):
         info = self.__APIInfo['metrics-collection']
@@ -844,7 +844,7 @@ class Numerous:
         mpart = { 'image' : ( 'image.img', imageDataOrOpenFile, mimeType) }
         v = self._simpleAPI(api, multipart=mpart)
         return v     # return value is updated user attributes
-       
+
     # iterator for per-user subscriptions. Note: users really
     # can't get anyone's subscriptions other than their own
     def subscriptions(self, userId=None):
@@ -865,10 +865,10 @@ class Numerous:
         return True      # errors throw exceptions
 
     #
-    # Create a brand new metric on the server 
+    # Create a brand new metric on the server
     # Returns a NumerousMetric object
     #
-    # You can specify additional initial attributes; 
+    # You can specify additional initial attributes;
     # see the NumerousApp api for details. The most useful
     # initial attribute is value, e.g., { 'value' : 17 } ... this
     # is useful enough that there's also a separate convenience
@@ -892,7 +892,7 @@ class Numerous:
 
 
     # ALL api exchanges with the Numerous server go through here except
-    # for _getRedirect() which is a special case (hack) for photo URLs 
+    # for _getRedirect() which is a special case (hack) for photo URLs
     #
     # Any single request/response uses this; chunked APIs use
     # the iterator classes (which in turn come back and use this repeatedly)
@@ -911,7 +911,7 @@ class Numerous:
     # in a url and it will take precedence over the base-url if any is present
     #
     # You can pass in a dictionary jdict which will be json-ified
-    # and sent as Content-Type: application/json. Or you can pass in 
+    # and sent as Content-Type: application/json. Or you can pass in
     # a multipart dictionary ... this is used for posting photos
     # You should not specify both jdict and multipart
     #
@@ -928,7 +928,7 @@ class Numerous:
         # but sometimes url is a full URL that came back from the server
         if url[0] == '/':                  # i.e. not "http..."
             url = self.__serverURL + url
-                
+
         if jdict and not multipart:     # BTW: passing both is undefined
             hdrs = { 'Content-Type': 'application/json' }
             data = json.dumps(jdict)
@@ -971,7 +971,7 @@ class Numerous:
             except (KeyError, ValueError):
                 # some server errors (e.g., Not Authorized) give no rate info
                 rateRemain = -1
-                rateReset = -1    
+                rateReset = -1
 
             tp = { 'debug' : self.__debug,
                    'attempt' : attempt,
@@ -993,9 +993,9 @@ class Numerous:
                 # On some requests that return "nothing" the server
                 # returns {} ... on others it literally returns nothing.
                 # Requests library doesn't like decoding zero-len JSON
-                # and throws a bizarre exception; hence this explicit 
+                # and throws a bizarre exception; hence this explicit
                 # "Look Before You Leap" case instead of catching exception.
-                rj = {}                
+                rj = {}
             else:
                 try:                   # only fails if server returns junk
                     rj = resp.json()
@@ -1013,7 +1013,7 @@ class Numerous:
         else:
             rj = { 'error-type' : "HTTPError" }
             rj['code'] = resp.status_code
-            reason = resp.raw.reason   
+            reason = resp.raw.reason
             rj['reason'] = reason
             rj['value'] = "Server returned an HTTP error: " + reason
             rj['id'] = url
@@ -1065,7 +1065,7 @@ class _Numerous_ChunkedAPIIter:
         self.__nextURL = apiOP['base-url']
 
         # the algorithm itself doesn't really need to know this
-        # BUT... for some better error reporting and also for 
+        # BUT... for some better error reporting and also for
         #        some statistics (used for testing/debugging)
         #        it's helpful to distinguish the first chunk
         #        from any subsequent additional chunks.
@@ -1081,10 +1081,10 @@ class _Numerous_ChunkedAPIIter:
 
     def __iter__(self):
         return self
- 
+
     # XXX although py2/py3 compatibility is "discouraged", using just this
     #     and a try/except import for httplib vs http.client I was able to
-    #     backport to py2. To be clear: this is a python3 file. But now 
+    #     backport to py2. To be clear: this is a python3 file. But now
     #     it happens to also work in python2.
     def next(self):
         return self.__next__()
@@ -1147,9 +1147,9 @@ class _Numerous_ChunkedAPIIter:
         try:
             r = self.__list.pop(0)
 
-        except AttributeError:              
+        except AttributeError:
             # list can be None here, happens when server returns Null for
-            # the list (which in turn happens sometimes when metrics are 
+            # the list (which in turn happens sometimes when metrics are
             # deleted during iterating). Treated silently as end of list.
             raise StopIteration()
 
