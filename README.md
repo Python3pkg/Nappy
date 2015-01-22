@@ -43,7 +43,24 @@ This package is available on pip:
 
 Alternatively, you can just copy numerous.py into a directory on your PYTHONPATH (system dependent main library location or you can put it in ~/lib and set your PYTHONPATH appropriately).
 
-If you want to use the shell command **nr** download that (and **nr.py**) and install it in your ~/bin and be sure to set the PYTHONPATH appropriately (see **nr** script itself)
+## shell-cmd directory
+
+There are two commands in the shell-cmd directory:
+* nr (files: nr and nr.py) - general purpose Numerous metric program
+* nrd - small program to display your Numerous metrics
+
+The file shell-cmd/nr is a simple wrapper and might not even be needed
+at all depending on how you installed everything. If you installed the
+numerous.py file using pip (or pip3) so that it is in your system
+library path then you can delete the "nr" file and rename "nr.py" to
+"nr" and just use the python file directly.
+
+If you installed the numerous.py file into your own personal directory
+tree somewhere (e.g., ~/lib/numerous.py) then you will want to keep
+the shell wrapper and edit it accordingly. This is all somewhat
+self-explanatory if you look at the files.
+
+The "nrd" file is a simple python program that will display your Numerous metrics ("nrd" means "Numerous Display"). I did not supply you with a PYTHONPATH wrapper (like nr vs nr.py); if you need to it is fairly self-explanatory how to make one similar to how nr vs nr.py work. 
 
 ## About API Keys
 You get your API key from your NumerousApp app on your phone/iPad/etc. Go to Settings, go into Developer Info, and there it is. Be careful with this; at this time there is no way to change your key so if you let other people have it that's game over for your account.
