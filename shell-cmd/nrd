@@ -1,0 +1,98 @@
+#!/usr/bin/python3
+#
+# nrd -- Numerous Display 
+#
+# Displays all of your numerous variables and values in text form
+# Basically this is a shell version of the numerous app on your phone
+# (except it's just a display no setting/etc)
+#
+# options:
+#     -c credspec        as in nr / numerousKey
+#     -m metricspec        see below, can be repeated
+#
+# Metric specification:
+#   There are several ways you can tell this what metrics to show.
+#   The simplest is the NRDMETRICS environment variable, which should
+#   be set to a SLASH-separated list of metric names or IDs ('/' is illegal
+#   in metric names and IDs, hence the choice as a separator). Exactly those
+#   metrics will be displayed. Alternatively you can build this list from
+#   the -m command option, giving one or more slash-separated "metricspec"
+#   arguments. All are concatenated so the following are equivalent:
+#          -m M1/M2/M3
+#          -m M1 -m M2/M3
+#
+#   If -m is given, NRDMETRICS environment variable is ignored.
+#
+
+from numerous import Numerous, numerousKey, NumerousAuthError
+import os
+import argparse
+import time
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('-m', '--metrics', action='append')
+parser.add_argument('-c', '--credspec')
+
+args = parser.parse_args()
+
+
+
+nr = Numerous(apiKey=numerousKey(args.credspec))
+try:
+    nr.ping()        # just to validate this before anything else
+except NumerousAuthError:
+    print("Could not connect to Numerous; likely cause is bad credentials.")
+    exit(1)
+
+mIDsRqstd = []
+
+if not args.metrics:
+    evn = os.environ.get('NRDMETRICS', None)
+    if evn:
+         args.metrics = [ evn ]
+
+if args.metrics:
+    for mIDspec in args.metrics:
+        for mId in mIDspec.split('/'):
+            mIDsRqstd.append(mId)
+
+#
+# Get all of the metrics you are subscribed to. This is the maximum set of
+# metrics we will display, possibly filtered by the metricsIDsRequested list
+#
+
+firstone=True
+n = 0
+for subs in nr.subscriptions():
+    mId = subs['metricId']
+    m = nr.metric(mId)
+    md = m.read(dictionary=True)
+
+    # print it if: printing all, or if the ID or name are in the requested list
+    if (not mIDsRqstd) or (mId in mIDsRqstd) or (md['label'] in mIDsRqstd):
+        vs = None
+        if md['kind'] == 'timer':
+            # note that for timers we are printing the time of the EVENT
+            # whereas the actual app prints the time until/since the event
+            vs = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(md['value']))
+        elif md['kind'] == 'currency':
+            vs = "${:.2f}".format(md['value'])
+        elif md['kind'] == 'percent':
+            vs = "{:.2f}%".format(md['value']*100)
+        else:
+            vs = "{}".format(md['value'])
+
+        if n == 0 and not firstone:
+            print("")
+
+        print("{:<40s}  {}".format(md['label'],vs))
+        firstone = False
+        n = (n + 1) % 5
+
+
+
+
+
+     
+
