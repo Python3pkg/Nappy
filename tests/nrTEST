@@ -81,54 +81,6 @@ fi
 
 
 
-
-
-
-#
-# Test the -k function first of all
-#
-
-if [ "x$NUMEROUSAPIKEY" = x ]
-then
-  NUMEROUSAPIKEY=$HOME/.myCred export NUMEROUSAPIKEY
-fi
-
-echo "Version under test:" `$NR -V`
-
-echo "TESTING::: $NR -k"
-$NR -k > $TMPFILE
-if [ $? != 0 ]; then echo "No API key -- check NUMEROUSAPIKEY"; exit 1; fi
-APIKEY=`cat $TMPFILE`
-if [ "x$APIKEY" = x ]
-then
-  echo "Testing -k .. failed"
-  exit 1
-fi
-
-#
-# See if we can successfully connect
-#
-echo "TESTING::: $NR -q"
-$NR -q
-if [ $? != 0 ]; then echo "failed"; exit 1; fi
-
-#
-# Create a test metric to bang on
-#
-M=nrTEST$$
-MVAL=999
-Mparams="{ \"private\" : true, \"value\" : $MVAL }"
-
-echo "TESTING::: $NR -wM +$M $Mparams"
-$NR -wM +$M "$Mparams" > $TMPFILE
-if [ $? != 0 ]; then echo "failed"; exit 1; fi
-
-METRIC=`cat $TMPFILE`
-
-echo "CREATED::: $METRIC"
-
-DELETE_THESE="$DELETE_THESE $METRIC"
-
 # silly little function to add numbers using python
 # because sometimes (believe it or not) bc isn't there
 # We KNOW python is here
@@ -198,6 +150,79 @@ quickmsg() {
   echo "QUICK::::: $*"
 }
 
+# utility function to parse a JSON object and return (via RESULT) a field
+# JSON object in $1
+# desired field key in $2
+parsejson() {
+  JPGM="import json; d = json.loads('"$1"'); print(d['"$2"'])"
+  RESULT=`$PYTHON -c "$JPGM"`
+}
+
+#
+# utility function to...
+#   Take the JSON object in $1 which should be NR output
+#   Go into the Results top level field
+#   take the $2'th element of the Results array
+#   take the result element of that
+#   return the $3 element of that
+#
+# typical use if you expected one JSON result from NR would be
+#
+#    parseNRJSON "$J" 0 description
+#
+# where J is the NR output and, for example, description is the field you want
+#
+parseNRJSON() {
+  JPGM="import json
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('j')
+args = parser.parse_args()
+
+d = json.loads(args.j)
+print(d['Results']["$2"]['result']['"$3"'])
+"
+
+  RESULT=`$PYTHON -c "$JPGM" "$1"`
+}
+
+
+
+
+#
+# Test the -k function first of all
+#
+
+if [ "x$NUMEROUSAPIKEY" = x ]
+then
+  NUMEROUSAPIKEY=$HOME/.myCred export NUMEROUSAPIKEY
+fi
+
+echo "Version under test:" `$NR -V`
+
+doNR -k
+APIKEY="$RESULT"
+
+#
+# See if we can successfully connect
+#
+doNR -q
+
+#
+# Create a test metric to bang on
+#
+M=nrTEST$$
+MVAL=999
+Mparams="{ \"private\" : true, \"value\" : $MVAL }"
+
+
+doNR -wM +$M "$Mparams"
+METRIC=$RESULT
+
+infomsg "created $METRIC"
+
+DELETE_THESE="$DELETE_THESE $METRIC"
+
 # see if it got created with the correct privacy and value
 verifyNR $MVAL "Wrong initial value" $METRIC
 verifyNR True "Wrong private setting" $METRIC[private]
@@ -266,6 +291,32 @@ updateJSON="{ \"description\": \"$Desc\" }"
 doNR -wMq $METRIC "$updateJSON"
 verifyNR "$Desc" "[description(2)]" "${METRIC}[description]"
 verifyNR "$Units" "[units(2)]" "${METRIC}[units]"
+
+# some JSON option testing (testing the nr command itself)
+V=123
+doNR -wq $METRIC $V
+doNR -j $METRIC $METRIC $METRIC
+J="$RESULT"
+for i in 0 1 2
+do
+  parseNRJSON "$J" $i value
+  if [ "x$RESULT" != "x$V" ]
+  then
+    failout "Got $RESULT expected $V for element $i"
+  fi
+done
+
+Desc="{ a bunch of stuff in unbalanced] braces {}"
+updateJSON="{ \"description\": \"$Desc\" }"
+
+doNR -wMq $METRIC "$updateJSON"
+doNR -j $METRIC
+J="$RESULT"
+parseNRJSON "$J" 0 description
+if [ "x$RESULT" != "x$Desc" ]
+then
+  failout "Got $RESULT expected $Desc"
+fi
 
 # make a "timer" metric to bang on
 TMR=nrTMRTEST$$
