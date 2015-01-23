@@ -1,0 +1,247 @@
+#!/bin/sh
+#
+# The point of this test is to test the atomicity of "ADD" by
+# creating a metric, firing 30 simultaneous programs that each
+# do 5 "add 1" operations and seeing what the result is (should be 150)
+#
+# It does this in a loop $1 times or until failure.
+#
+#
+# ENVIRONMENT VARIABLES
+#    NUMEROUSAPIKEY - REQUIRED ... set this for your api key
+#
+#    NR             - OPTIONAL ... specify the "nr" program to use
+#                     Default: $HOME/bin/nr
+#
+#    PYTHON         - OPTIONAL ... specify python vs python3
+#                     Default: /usr/bin/python3
+#
+#    METRICNAME     - OPTIONAL ... specify the name (label) for test metric
+#                     Default: atomTest
+#
+
+if [ "x$NR" = "x" ]; then NR=$HOME/bin/nr; fi
+if [ "x$METRICNAME" = "x" ]; then METRICNAME="atomTest"; fi
+if [ "x$PYTHON" = "x" ]; then PYTHON=/usr/bin/python3; fi
+
+TMPFILE=/tmp/atomAdd$$
+
+echo "ATOMIC ADD TEST"
+echo " ... METRICNAME ::" $METRICNAME
+echo " ... PYTHON     ::" $PYTHON
+echo " ... NR         ::" $NR
+
+
+# for bailing out with a message
+failout() {
+    DIE=yes
+    if [ "x$1" = "xCONTINUE" ]; then DIE=no; shift; fi
+    echo "FAILED:::: $*"
+    if [ "$DIE" = "yes" ]; then exit 1; fi
+}
+
+
+
+#
+# idiomatic way to do something with $NR, log it, check for status, etc.
+# If $1 looks like "EXIT:N" then the expected result is $? = N
+#
+# Will exit 1 if fails, otherwise RESULT is set to the result.
+#
+doNR() {
+  GOODSTATUS=0
+  case "x$1" in
+    xEXIT:*)
+      GOODSTATUS=`echo $1 | sed -e 's/^.*://'`
+      shift
+      ;;
+  esac
+
+  echo "TESTING::: $NR $*"
+  $NR "$@" > $TMPFILE
+  STATUS=$?
+  if [ $STATUS != $GOODSTATUS ]; then failout "... $NR exit status $STATUS"; fi
+  RESULT=`cat $TMPFILE`
+}
+
+onetest() {
+    echo BEGINNING TEST @ `date`
+
+    doNR -wM +"$METRICNAME" private
+    M=$RESULT
+    echo "Metric ID is $M"
+
+    # The program we're going to fire up 30 copies of:
+    TPGM="
+import argparse
+import time
+import numerous
+
+nr = numerous.Numerous()
+metric = nr.metric(\"$M\")
+
+# force libs to load
+try:
+  ignored = metric.write(metric.read(), onlyIf=True)
+except numerous.NumerousMetricConflictError:
+  pass
+
+parser = argparse.ArgumentParser()
+parser.add_argument('readyfile')
+parser.add_argument('gofile1')
+parser.add_argument('gofile2')
+
+args = parser.parse_args()
+
+# tell the world we ready
+f = open(args.readyfile,'w+')
+
+# the first loop doesn't fully busy-wait so everyone can get started
+while True:
+  try:
+    g = open(args.gofile1)
+    break
+  except IOError:
+    time.sleep(2)
+
+# so after you make the gofile1 you should wait more than 2 seconds
+# (my test program waits 15 seconds) then make gofile2
+while True:
+  try:
+    g = open(args.gofile2)
+    break
+  except IOError:
+    pass
+
+# and off we go!!!
+metric.write(1, add=True)
+metric.write(1, add=True)
+metric.write(1, add=True)
+metric.write(1, add=True)
+metric.write(1, add=True)
+"
+
+    # make a temp directory to coordinate all this nonsense
+    TMPDIR=/tmp/makeDups$$
+
+    mkdir $TMPDIR
+
+    G1=$TMPDIR/G1
+    G2=$TMPDIR/G2
+    READYPREFIX="XYZZYPLUGH"
+
+    N=30
+    echo "Starting $N copies of writer programs."
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29
+    do
+        $PYTHON -c "$TPGM" $TMPDIR/$READYPREFIX.$i $G1 $G2 >/dev/null 2>&1 &
+    done
+
+    # now wait for all of the programs to indicate they are ready
+    while :
+    do
+        NREADY=`ls -l $TMPDIR | grep $READYPREFIX | wc -l`
+        if [ $NREADY -eq $N ]
+        then
+    	break
+        fi
+        sleep 2
+    done
+
+    # this is an awesome hack to figure out how long we need to wait for
+    # a fresh API rate allocation. Creative abuse of throttle policy function.
+    TPGM="
+from numerous import Numerous
+
+def throttleWrap(nr, tparams, td, up):
+    td['rate-reset'] = tparams['rate-reset']
+    return up[0](nr, tparams, up[1], up[2])
+
+savedTd = {}
+nr = Numerous(throttle=throttleWrap, throttleData=savedTd)
+nr.ping()
+print(savedTd['rate-reset'])
+"
+    # this gets us a fresh allocation of API rate
+
+    RATEDELAY=`$PYTHON -c "$TPGM"`
+    echo "Writers are poised; sleeping $RATEDELAY for fresh API allocation."
+    sleep $RATEDELAY
+
+    # make the first go file to get them all busy waiting
+    echo " ... and sending them off to the races!"
+    touch $G1
+
+    # give them a chance to all start busy-waiting
+    sleep 15
+
+    # off to the races!
+    touch $G2
+
+    wait
+
+    rm -rf $TMPDIR
+
+    # now just read back the result
+    doNR $M
+    GOT=$RESULT
+    WANT=150
+
+    EXITSTATUS=0
+    if [ $GOT -eq $WANT ]
+    then
+      echo "Got the right amount ($WANT); deleting metric."
+      $NR --killmetric $M
+    else
+      echo "Made the bug show up: got $GOT instead of $WANT."
+      echo "Preserving metric $M for examination."
+      EXITSTATUS=1
+    fi
+
+    echo "Finished @ `date`"
+    return $EXITSTATUS
+}
+
+# silly little function to add numbers using python
+# because sometimes (believe it or not) bc isn't there
+# We KNOW python is here
+#
+# result in RESULT
+add() {
+  RESULT=`$PYTHON -c "print( $1 + $2 )"`
+}
+
+
+
+
+#
+# $1 specifies how to loop over the test
+#     DEFAULT (no argument given) - loop until we get a failure
+#     any number: loop at most that number of times
+#     ONCE - loop once (same as "1" duh)
+#
+
+case "x$1" in
+  x)
+    NLOOPS=10000      # close enough to forever lol
+    shift
+    ;;
+
+  xONCE)
+    NLOOPS=1
+    ;;
+
+  x*)
+    NLOOPS="$1"   # better be digits
+    ;;
+esac
+
+TESTN=0
+while [ $TESTN -lt $NLOOPS ]
+do
+  onetest
+  if [ $? -ne 0 ]; then exit 1; fi
+  add $TESTN 1
+  TESTN=$RESULT
+  echo "$TESTN tests completed."
+done
