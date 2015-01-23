@@ -613,7 +613,11 @@ def printEventResults(r, fld):
             if fld and not isEventOrInteractionId(fld):
                 print(i.get(fld,None))
             else:
-                print(i['value'],"@",i['updated'],"by",i['authorId'])
+                # the initial value when a metric is created 
+                # does not have an authorId (is this a server bug?)
+                # so we need to be careful...
+                a = i.get('authorId', 'INITIAL-CREATION-VALUE')
+                print(i['value'],"@",i['updated'],"by",a)
 
 def printDeleteResults(r):
     print("%s[%s] -- %s" %(r['ID'], r['delID'], r['result']))
