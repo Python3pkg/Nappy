@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150122-1.4.x1x"
+_NumerousClassVersionString = "20150123-1.4.x2x"
 
 #
 # metric object
@@ -702,7 +702,11 @@ class Numerous:
             # voluntary arbitrary limit
             if rateleft >= 0 and rateleft < td:
                 nr.statistics['throttleVoluntaryBackoff'] += 1
-                time.sleep(max(backoff, td - rateleft))
+                # arbitrary: 1 sec if more than half left, 3 secs if less
+                if (rateleft*2) > td:
+                    time.sleep(1)
+                else:
+                    time.sleep(3)
 
             return False               # no retry
 

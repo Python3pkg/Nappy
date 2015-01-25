@@ -1018,6 +1018,7 @@ else:
 
 if args.statistics:
     print("Statistics:")
-    print(nrServer.statistics)
+    for k in nrServer.statistics:
+        print("{:>24s}: {}".format(k, nrServer.statistics[k]))
 
 exit(exitStatus)
