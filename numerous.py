@@ -42,7 +42,7 @@
 # #################
 
 import json
-import sys              # only for version in user-agent and sys.stdin creds helper
+import sys              # for version in user-agent and sys.stdin creds helper
 import os               # for getting environment in creds helper
 import requests         # (cheerleading: wow this made the HTTP code simple)
 import logging          # needed for debug output
@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150123-1.4.x2x"
+_NumerousClassVersionString = "20150208-1.4.x"
 
 #
 # metric object
@@ -297,14 +297,28 @@ class NumerousMetric:
     #
     #   onlyIf=True sends the "only if it changed" feature of the NumerousAPI.
     #      -- throws NumerousMetricConflictError if no change
+    #
     #   add=True sends the "action: ADD" (the value is added to the metric)
+    #
     #   dictionary=True returns the full dictionary results.
-    def write(self, newval, onlyIf=False, add=False, dictionary=False):
+    #
+    #   updated allows you to specify the timestamp associated with the value
+    #      -- it must be a string in the format described in the NumerousAPI
+    #         documentation. Example: '2015-02-08T15:27:12.863Z'
+    #         NOTE: The server API implementation REQUIRES the fractional 
+    #               seconds be EXACTLY 3 digits. No other syntax will work.
+    #               You will get 400/BadRequest if your format is incorrect.
+    #               In particular a direct strftime won't work; you will have
+    #               to manually massage it to conform to the above syntax.
+    #
+    def write(self, newval, onlyIf=False, add=False, dictionary=False, updated=None):
         j = { 'value' : newval }
         if onlyIf:
             j['onlyIfChanged'] = True
         if add:
             j['action'] = 'ADD'
+        if updated:
+            j['updated'] = updated
 
         api = self.__getAPI('events', 'POST')
         try:

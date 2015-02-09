@@ -23,12 +23,23 @@ NRTEST=./nrTEST      # only used in DEVTEST case
 #    -D is for development testing and recursively invokes itself to test
 #       python and python3 using the local development tree (yeehah!)
 #
+#
+#    -C allows for continuing after certain particular failures.
+#       (workaround for testing despite certain server bugs, e.g., atomicity)
+#
 # Note the option parsing is hokey and doesn't allow e.g., -XQ use -X -Q
 #
+
+SOMECONTINUE=no
 
 while [ $# -gt 0 ]
 do
   case "x$1" in
+    x-C)
+      SOMECONTINUE="yes"
+      shift
+      ;;
+
     x-Q)
       QUICK=yes
       shift
@@ -63,16 +74,19 @@ then
     QK=""
     if [ "$QUICK" = "yes" ]; then QK="-Q"; fi
 
+    CT=""
+    if [ "$SOMECONTINUE" = "yes" ]; then CT="-C"; fi
+
     NRPY=../shell-cmd/nr.py
 
     echo ' - - - - TESTING PYTHON 2 - - - -'
 
-    PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK
+    PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
     if [ $? -ne 0 ]; then echo "python v2 failed"; exit 1; fi
 
     echo ' - - - - TESTING PYTHON 3 - - - -'
 
-    PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK
+    PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
     if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
 
     exit 0
@@ -127,6 +141,22 @@ doNR() {
 # Remaining arguments go to doNR
 #
 verifyNR() {
+  DIE=yes
+  case "x$1" in
+    xCONTINUE)
+      DIE=no
+      shift
+      ;;
+
+    xSOMECONTINUE)
+      if [ $SOMECONTINUE = "yes" ]
+      then
+        DIE="no"
+      fi
+      shift
+      ;;
+  esac
+
   EXPECTED=$1
   ERRMSG=$2
   shift 2
@@ -134,7 +164,12 @@ verifyNR() {
   doNR "$@"
   if [ "x$RESULT" != "x$EXPECTED" ]
   then
-    failout "${ERRMSG}: Expected \"$EXPECTED\" Got \"$RESULT\""
+    if [ $DIE = "no" ]
+    then
+      failout CONTINUE "${ERRMSG}: Expected \"$EXPECTED\" Got \"$RESULT\""
+    else
+      failout "${ERRMSG}: Expected \"$EXPECTED\" Got \"$RESULT\""
+    fi
   fi
 }
 
@@ -142,12 +177,12 @@ verifyNR() {
 # Just a way to put an info into the output stream, properly formatted
 #
 infomsg() {
-  echo "INFO:::::: $*"
+  echo "::INFO:::: $*"
 }
 
 # variant for things skipped via -Q
 quickmsg() {
-  echo "QUICK::::: $*"
+  echo ":::QUICK:: $*"
 }
 
 # utility function to parse a JSON object and return (via RESULT) a field
@@ -198,7 +233,7 @@ then
   NUMEROUSAPIKEY=$HOME/.myCred export NUMEROUSAPIKEY
 fi
 
-echo "Version under test:" `$NR -V`
+infomsg "Version under test:" `$NR -V`
 
 doNR -k
 APIKEY="$RESULT"
@@ -264,6 +299,51 @@ verifyNR 20 "Adding 3" -w+ $METRIC 3
 verifyNR -1 "Subtracting 21" -w+ $METRIC -21
 verifyNR -1 "Read back" $METRIC
 
+# test on a totally separate metric to test out the 'updated' write() feature
+
+infomsg "Testing the \"updated\" timestamp feature of write()"
+infomsg "(uses a python program not the NR command)"
+
+TPGM="import numerous
+
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.createMetric(\"nrTXX$$\", attrs={ 'private' : True })
+
+testval = 99
+r = metric.write(testval, dictionary=True)
+ids = { testval : r['id'] }
+
+# write some values from the past
+testvector = [ 55, 44, 88, 66, 33 ]
+testvectormax = 88 # XXX we just know this
+
+for i in testvector:
+  tstr = '2001-01-01T10:00:01.0{}Z'.format(i)
+  r = metric.write(i, updated=tstr, dictionary=True)
+  ids[i] = r['id']
+
+# since all those were from earlier than the testval, value should be testval
+if metric.read() != testval:
+  exit(1)
+
+# delete the testval we wrote, leaving the timestamped values only
+metric.eventDelete(ids[testval])
+
+# it should be whatever is the max in the test vector now
+if metric.read() != testvectormax:
+  exit(1)
+
+metric.crushKillDestroy()
+exit(0)
+"
+
+$PYTHON -c "$TPGM"
+if [ $? -ne 0 ]
+then
+  failout "updated timestamp write test failed"
+fi
+infomsg "Succeeded"
+
 # try making an error entry
 ErrString="This is the error info"
 ErrInfo="{ \"kind\": \"error\", \"commentBody\": \"$ErrString\" }"
@@ -325,7 +405,7 @@ TMRparams='{ "private" : true, "kind" : "timer" }'
 doNR -wM +$TMR "$TMRparams"
 TMETRIC=$RESULT
 
-echo "CREATED::: $TMETRIC"
+infomsg "created metric $TMETRIC"
 
 DELETE_THESE="$DELETE_THESE $TMETRIC"
 
@@ -343,7 +423,7 @@ VGMparams='{ "private" : true }'
 doNR -wM +$VGM "$VGMparams"
 VGMETRIC=$RESULT
 
-echo "CREATED::: $VGMETRIC"
+infomsg "created metric $VGMETRIC"
 
 DELETE_THESE="$DELETE_THESE $VGMETRIC"
 
@@ -358,7 +438,7 @@ done
 # They are supposed to operate atomically (they didn't in the past
 # but that was a server bug and is now fixed)
 
-echo "TESTING::: 30 x $NR -w+q $METRIC 1 -- in parallel"
+infomsg "Atomicity test. 30 x $NR -w+q $METRIC 1 -- in parallel"
 doNR -wq $METRIC 0
 for i in 0 1 2 3 4 5 6 7 8 9
 do
@@ -370,7 +450,8 @@ done
 
 wait
 
-verifyNR 30 "Atomicity failed" $METRIC
+verifyNR SOMECONTINUE 30 "Atomicity failed" $METRIC
+
 
 # fire off 50 "onlyIfChanged" operations in parallel
 # only one of them should change the variable, the rest should be "NoChange"
@@ -625,7 +706,7 @@ infomsg "the photoURL is: $PhotoURL"
 # We check for that... may as well
 if [ "x$PhotoURL" = "xNone" ]
 then
-  echo "Bad photo URL ... photo test skipped"
+  failout CONTINUE "Bad photo URL ... photo test skipped"
   EXITSTATUS=1
 else
   # get the photo... we use python/requests because we know we have them
@@ -729,7 +810,7 @@ then
     fi
   done
 
-  echo "TESTING::: ALSO verifying via $NR -I $METRIC  (just interactions)"
+  infomsg "ALSO verifying via $NR -I $METRIC  (just interactions)"
   $NR -I $METRIC > $TMPFILE
 
   for m in $CMTS
@@ -799,8 +880,8 @@ EXITSTATUS=0
 # Get a list of metrics
 #
 infomsg "plain $NR to search for all metrics we made"
-$NR > $TMPFILE
-if [ $? != 0 ]; then echo "failed"; EXITSTATUS=1; fi
+doNR
+echo "$RESULT" > $TMPFILE
 
 #
 # every variable we made should be in that output
