@@ -450,8 +450,13 @@ k = numerousKey(args.credspec)
 if args.key:
   # this is a hack way to just extract the API key from "wherever"
   # honestly it probably should be a separate program but here we are
-  print(k)
-  exit(0)
+  if k:
+      print(k)
+      exit(0)
+  else:
+      print("No API Key")
+      exit(1)
+
 
 nrServer = Numerous(apiKey=k)
 

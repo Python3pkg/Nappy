@@ -235,12 +235,15 @@ fi
 
 infomsg "Version under test:" `$NR -V`
 
-doNR -k
-APIKEY="$RESULT"
+# just to get a more human-friendly error message handle the -k manually
+$NR -k > $TMPFILE
+if [ $? -ne 0 ]; then failout "Unable to get apikey. Check NUMEROUSAPIKEY."; fi
+APIKEY=`cat $TMPFILE`
 
 #
 # See if we can successfully connect
 #
+infomsg "Contacting server to verify apikey is valid."
 doNR -q
 
 #
