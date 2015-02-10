@@ -8,6 +8,11 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 
 Works on both python2 and python3.
 
+## New in version 1.5.0
+
+* Metric fields can be accessed with caching and [ ] subscript notation.
+* More ways to specify metric IDs in constructor
+
 ## Getting started
 
 Example code:
@@ -22,6 +27,9 @@ nr = Numerous(apiKey=MyKey)
 metric = nr.metric(MyMetric)
 
 print (metric.read())             # current value
+
+# can also access values this way
+label = metric['label']
 
 metric.write(1)
 metric.like()
