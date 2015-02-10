@@ -11,11 +11,16 @@ nr = Numerous()
 </code></pre>
 <p>In addition to <code>apiKey</code> and <code>server</code> it is also possible to specify a custom rate-limiting/throttle policy. See <a href="ratelimits.html">Rate Limits</a> for details.</p>
 <h2>Public Attributes</h2>
-<p>The only public attribute is <code>serverName</code> and it is informational only:</p>
+<ul>
+<li>serverName</li>
+<li>statistics</li>
+</ul>
+<p>Public attribute <code>serverName</code> informational only:</p>
 <pre><code>nr = Numerous()
 print("Using {} as the server".format(nr.serverName))
 </code></pre>
 <p>once you have instantiated a Numerous() setting <code>serverName</code> to anything else will NOT change the server being used.</p>
+<p>The <code>statistics</code> are counters and other information about the internal workings of the class and might be useful to examine for testing/debugging.</p>
 <h2>Methods</h2>
 <ul>
 <li>metric(metricId) - instantiate a NumerousMetric object.</li>
@@ -52,9 +57,24 @@ m = nr.metric('https://api.numerousapp.com/metrics/299336148273384')
 
 # the web view URL:
 m = nr.metric('http://n.numerousapp.com/m/1b8xa7fjg92r')
-</code></pre>
 
-<p>In each of these forms the proper metric ID is recovered from the URL by simply parsing out the URL fields (and decoding the base 36 web view URL). The NumerousMetric object is instantiated from that parsed/decoded metric ID. No extra server transactions are performed to accomplish this.</p>
+# a dictionary containing an 'id' field
+# so, for example, this works to print all your metrics:
+for mdict in nr.metrics():
+    m = nr.metric(mdict)
+    print(m)
+
+# a dictionary containing a 'metricId' field, such as
+# the dictionary returned by the subscriptions method:
+for sb in nr.subscriptions():
+    m = nr.metric(sb)
+    print(m)
+</code></pre>
+<p>
+If the passed-in metricId looks like a URL then the tail end of that URL is taken, with base36 decoding in the case of the web-view URL. No sanity checking is performed on this acceptance of the tail-end of the URL; if you have provided a bogus URL you will find out when you go to use the metric (see <code>validate</code> if you care).</p>
+<p>If the passed-in metricId isn't a URL but is indexable and contains a key 'metricId' or 'id', those will be used (in that order of preference).</p>
+<p>Otherwise, and this is the normal/expected case, the passed-in metricId should just be a string representation of the actual metric ID.</p>
+<p>In no case is the server contacted. This simply instantiates a NumerousMetric object and associates it with the given ID.</p>
 <h3>metricByLabel(labelspec, matchType='FIRST')</h3>
 <p>Example usage:</p>
 <pre><code># nr is a Numerous()

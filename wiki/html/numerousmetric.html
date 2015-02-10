@@ -30,6 +30,8 @@ m.read()
 <ul>
 <li>read</li>
 <li>write</li>
+<li>Accessing cached fields with [ ]</li>
+<li>Human-readable string conversion: <code>__str__</code></li>
 <li>validate</li>
 <li>events</li>
 <li>stream</li>
@@ -57,7 +59,7 @@ m.read()
 <pre><code>v = m.read()
 </code></pre>
 <p>Reads the current value of the metric from the server. Returns the metric value, or returns the entire metric attribute dictionary if <code>dictionary=True</code>.</p>
-<h3>write(newval, onlyIf=False, add=False, dictionary=False)</h3>
+<h3>write(newval, onlyIf=False, add=False, dictionary=False, updated=None)</h3>
 <p>Example usage:</p>
 <pre><code>m.write(17)
 </code></pre>
@@ -83,10 +85,91 @@ m.write(v + newval)
 </code></pre>
 <p>however the <code>add</code> operation is implemented atomically as a server-side operation via an explicit feature of the API. Several clients simultaneously adding to a metric using <code>add</code> will always give the correct result, whereas implementing the <code>add</code> yourself via two separate read/write operations leaves a race condition that could cause an incorrect final total if multiple people are doing it to one metric at the same time.</p>
 <ul>
-<li><code>dictionary=False</code> - specifying <code>dictionary=True</code> will return the entire metric attribute dictionary (reflecting the post-updated state); otherwise just the naked value is returned.</li>
+<li><code>dictionary=False</code> - specifying <code>dictionary=True</code> will return the entire <b>event</b> attribute dictionary (reflecting the event created by this write; this is NOT the updated metric state); otherwise just the naked updated value is returned (which is obvious/redundant in a plain write but might not be obvious/redundant in an ADD operation).</li>
+<p>&nbsp;</p>
+<li><code>updated=None</code> - you can set a specific timestamp to be associated with the value being written by passing in a string such as <code>updated='2015-01-21T15:43:57.123Z'</code>. The server is very strict about the format of this timestamp string; in particular note that the fractional seconds field must be exactly three digits (no more, no fewer). This is sometimes useful if you want to load historic data into a metric (and associate specific timestamps with those data points).</li>
 </ul>
 <p>Exceptions:
-* As already noted, raises NumerousMetricConflictError if <code>onlyIf=True</code> and there was no value change.</p>
+<ul><li>
+As already noted, raises NumerousMetricConflictError if <code>onlyIf=True</code> and there was no value change.</li>
+</ul>
+<h3>Accessing cached fields with [ ]</h3>
+<p>You can access any named metric attribute (as defined in the NumerousAPI documentation) using the python subscript [] notation. For example:</p>
+<pre><code>
+  lbl = m['label']
+  ownerId = m['ownerId']
+</code></pre>
+<p>When you do this you will be accessing a cached copy of the data. The NumerousMetric class will perform a fetch from the server if necessary (the first time you access a metric in any way). Subsequent access via the subscript method will always access a cached copy if that copy is available.</p>
+<p>Cache consistency is maintained only if all of your modifications of this metric go through this particular metric object. For example, this will work correctly:</p>
+<pre><code>
+  m = nr.metric(someID)   # instantiate "m" for the given someID
+  m.write(1)
+  v1 = m['value']
+  m.write(2)
+  v2 = m['value']
+</code></pre>
+<p>In this case v1 will be 1 and v2 will be 2.<p>
+<p>However, this does NOT work correctly:</p>
+<pre><code>
+  m = nr.metric(someID)
+  another_m = nr.metric(someID) # same ID but different object
+  x = m['value']                # read current value of m
+  another_m.write(x+1)          # update it but using other object
+  print(m['value'])             # will print old value
+</code></pre>
+<p>This will print the old value, as it is still cached in the <code>m</code> object and the <code>m</code> object does not know that the server was updated via <code>another_m</code>.</p>
+<p>Obviously caching also doesn't work correctly if the metric can be updated on the server behind your back. The point of the [ ] attribute caching is just to work in the obvious/simple way for the obvious/simple cases. The cache semantics are similar to:</p>
+<pre><code>
+  mycache = m.read(dictionary=True)     # get the entire metric dictionary
+  # rest of program relies on mycache for metric attributes
+  # so, for example:
+  print("The metric label is", mycache['label'])
+
+  # if I update the metric I know I should cache it again
+  m.write(88)
+  mycache = m.read(dictionary=True)     # update my cache of this metric
+
+</code></pre>
+<p>If your application requires different cache semantics use m.read() every time; it always contacts the server. Note also that every m.read() call updates the cached copy used for [ ] access. This happens regardless of whether you ask for just the value (using m.read()) or the entire dictionary (using m.read(dictionary=True)). At the server API level the GET operation returns the entire dictionary every time so the read method automatically updates the local cached copy of the metric attributes every time.</p>
+<p>Writing to a metric via the subscript notation is not implemented. Thus:</p>
+<pre><code>
+  m['value'] = 17
+</code></pre>
+<p>will raise an exception (TypeError). For now this is on purpose, as allowing it would open up the question of whether to make it a heavy operation that contacts the server each time or a light operation that would only update the local cache (and thus require some additional "commit" method to eventually force the updates to the server).</p>
+<p>In addition to the __getitem__ python data model method that implements the [ ] notation, the NumerousMetric class provides __contains__ and __iter__ methods, so the following python idioms also work:</p>
+<pre><code>
+  if 'photoURL' in m:
+      print("There is a photo associated with this metric")
+
+  for k in m:
+      print("Metric attribute {} is {}".format(k,m[k]))
+</code></pre>
+<h3>Human-readable string conversion</h3>
+<p>Example usage:</p>
+<pre><code>
+  print(m)
+</code></pre>
+<p>Whenever you convert a NumerousMetric into a string, a human-readable representation of the metric is provided by the <code>__str__</code> python data model method.</p>
+<p>In some cases the server will be contacted but in general the conversion to string will be done using a cached copy of the metric data. See the [ ] section above for a discussion of caching. Low-level network errors may raise exceptions but all "expected" exceptions from user errors will be handled internally and will produce an appropriate string representation. So, for example:</p>
+<pre><code>
+  someMetricID = '6994758820854512451'   # assume this is a real metric ID
+  m1 = nr.metric(someMetricID)
+  m2 = nr.metric('bogus id')   # completely invalid id format
+  m3 = nr.metric('123123123')  # correct format but not valid
+
+  m1.write(99)
+
+  print(m1)
+  print(m2)
+  print(m3)
+</code></pre>
+<p>will generate output something like</p>
+<pre><code>
+  &lt;NumerousMetric 'someLabel' [6994758820854512451] = 99&gt;
+  &lt;NumerousMetric **INVALID-ID** : 'bogus id'&gt;
+  &lt;NumerousMetric **ID-NOT-FOUND** : '123123123'&gt; 
+</code></pre>
+<p>It is a very bad decision on your part to rely on the specific format of the data in this string. It is meant for human consumption for display/debugging.</p>
 <h3>validate()</h3>
 <p>Example usage:</p>
 <pre><code>if not m.validate():
