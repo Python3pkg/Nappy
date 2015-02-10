@@ -11,6 +11,7 @@ PYTHON=python3
 TMPFILE=/tmp/$$
 DELETE_THESE=""
 EXITSTATUS=0
+DQ='"'           # handy at times
 
 QUICK=no
 DEVTEST=no
@@ -173,6 +174,14 @@ verifyNR() {
   fi
 }
 
+verifyPython() {
+  infomsg "$1"
+  $PYTHON -c "$3" > $TMPFILE
+  if [ $? -ne 0 ]; then failout "non-zero exit from python"; fi
+  RESULT=`cat $TMPFILE`
+  if [ "x$RESULT" != "x$2" ]; then failout "expected: $2, got $RESULT"; fi
+}
+
 #
 # Just a way to put an info into the output stream, properly formatted
 #
@@ -271,6 +280,50 @@ verifyNR $MVAL "Reading via $RESULT" $RESULT
 
 doNR $METRIC'[web]'
 verifyNR $MVAL "Reading via $RESULT" $RESULT
+
+# testing a variety of other ID forms we need to use python to get at them
+infomsg "Testing a variety of ID forms in nr.metric() constructor"
+for ID in \
+  "$METRIC" \
+  "{ 'metricId' : $METRIC }" \
+  "{ 'metricId' : $DQ$METRIC$DQ }" \
+  "{ 'id' : $METRIC }" \
+  "{ 'id' : $DQ$METRIC$DQ }"
+do
+
+  TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+i = $ID
+print(nr.metric(i).read())
+"
+
+  verifyPython " .. id: $ID" $MVAL "$TPGM"
+done
+
+# testing the exception cases
+  TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+i = {}
+try:
+  print(nr.metric(i).read())
+  exit(1)
+except KeyError:
+  print('KeyError')
+  exit(0)
+"
+verifyPython " .. id: {}" "KeyError" "$TPGM"
+
+  TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+i = {'id' : 'something bogus'}
+try:
+  print(nr.metric(i).read())
+  exit(1)
+except numerous.NumerousError as x:
+  print('NumerousError {}'.format(x.code))
+  exit(0)
+"
+verifyPython " .. id: {'id' : 'something bogus'}" "NumerousError 400" "$TPGM"
 
 # write a value
 verifyNR $$ "wrong write result" -w $METRIC $$

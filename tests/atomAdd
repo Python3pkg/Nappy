@@ -150,6 +150,12 @@ metric.write(1, add=True)
 
     # this is an awesome hack to figure out how long we need to wait for
     # a fresh API rate allocation. Creative abuse of throttle policy function.
+    #
+    # as an aside, the rate-reset time is now available in the statistics
+    # attribute so the throttle hack is unnecessary. I left it here as an
+    # example if you really needed something that wasn't in the statistics.
+    # One hopes this is mostly useful in test frameworks not "real use".
+    #
     TPGM="
 from numerous import Numerous
 

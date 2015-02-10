@@ -924,9 +924,9 @@ else:
         elif args.killmetric:
             try:
                 metric.crushKillDestroy()
-                r['result'] = "Deleted"
+                r['result'] = r['ID'] + " Deleted"
             except NumerousError as e:
-                r['result'] = "FAILED " + e.reason
+                r['result'] = r['ID'] + " delete FAILED " + e.reason
 
         elif args.interaction:
             if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
