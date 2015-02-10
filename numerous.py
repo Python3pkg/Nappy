@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150209-1.4.x"
+_NumerousClassVersionString = "20150210-1.4.x"
 
 #
 # metric object
@@ -313,9 +313,11 @@ class NumerousMetric:
             rslt += "'{}' [{}] = {}".format(v['label'],v['id'],v['value'])
         except NumerousError as x:      # you likely have a bogus id
             if x.code == 400:           # yup, "Bad Request"
-                rslt += "BAD-ID: '{}'".format(self.id)
+                rslt += "**INVALID-ID** : '{}'".format(self.id)
+            elif x.code == 404:
+                rslt += "**ID-NOT-FOUND** : '{}'".format(self.id)
             else:
-                rslt += "SERVER-ERROR: {}".format(x.reason)
+                rslt += "**SERVER-ERROR** : {}".format(x.reason)
         return rslt + ">"
 
     # Just a small wrapper around nr._makeAPIcontext, to use our API table
