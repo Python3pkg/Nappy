@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150208-1.4.x"
+_NumerousClassVersionString = "20150209-1.4.x"
 
 #
 # metric object
@@ -168,7 +168,11 @@ class NumerousMetric:
         }
     }
 
+
+    # =====================================================
     # constructor ... usually invoked via Numerous.metric()
+    # =====================================================
+    #
     def __init__(self, id, numerous):
         #
         # "id" should normally be the naked metric id (as a string).
@@ -191,18 +195,128 @@ class NumerousMetric:
         # the presence of a '/' indicates a non-naked metric ID. This
         # seems a reasonable assumption given that IDs have to go into URLs
         #
+        # "id" can be a dictionary representing a metric or a subscription.
+        # We will take (in order) key 'metricId' or key 'id' as the id.
+        # This is convenient when using the metrics() or subscriptions() iterators.
+        #
+        # "id" can be an integer representing a metric ID. Not recommended
+        # though it's handy sometimes in cut/paste interactive testing/use.
+        #
+        actualId = None
         try:
-            if '/' in id:
-                fields = id.split('/')
-                if fields[-2] == "m":
-                    id = int(fields[-1],36)
-                else:
-                    id = fields[-1]
-        except TypeError:    # you can pass an integer in as an ID
-            id = str(id)     # but we carry it around as a string, just because
+            fields = id.split('/')
+            if len(fields) == 1:      # this is the normal string '123123123' case
+                actualId = fields[0]
+            elif fields[-2] == "m":   # http://n.numerousapp.com/m/1x8ba7fjg72d
+                actualId = int(fields[-1],36)
+            else:                     # the other http://blahblah/metricID cases
+                actualId = fields[-1]
 
-        self.id = id
+        except AttributeError:        # not a string (no "split" method anyway)
+            pass
+
+        if not actualId:
+            # it's not a string, try the dictionary
+            try:
+                actualId = id['metricId']
+            except TypeError:
+                pass
+            except KeyError:
+                # take ['id'] if it exists, else (implicitly) reraise KeyError
+                actualId = id['id']
+
+        if not actualId:
+            # not string, not dictionary, try integer
+            actualId = "{:d}".format(id)   # raises exception if id is not int
+
+        # str-fication is belt/suspenders in case (e.g.) you gave us an int in a dict
+        self.id = str(actualId)
         self.nr = numerous
+        self.__cachedState = None
+
+
+    # ensure that the metric attribute cache exists
+    def __ensureCache(self):
+        if not self.__cachedState:
+            ignored = self.read()    # just read()ing to force cachedState into being
+
+
+
+    # ===================================
+    # __getitem__ : support for [] access
+    # ===================================
+    #
+    # If m is a metric, then m[key] accesses a locally cached copy.
+    # The server will be contacted if necessary (e.g., the first time any field
+    # is accessed) but whenever possible the last known values obtained from the
+    # server will be used.
+    #
+    # Thus, for example:
+    #
+    #    x = m['value']
+    #    x = m.read()
+    #
+    # both put the value into x. However, the read() method contacts the server
+    # every time it is invoked whereas the [] method only contacts the server
+    # once and saves a local copy of the data.
+    #
+    # The NumerousMetric class maintains cache consistency if you are the
+    # only writer of the metric. That is:
+    #
+    #     m.write(9)
+    #     nine = m['value']
+    #     m.write(10)
+    #     ten = m['value']
+    #
+    # will correctly result in nine==9, ten==10. But there is no cache consistency
+    # maintained if there are other people writing the metric behind your back, nor
+    # is there consistency across different objects:
+    #
+    #    id = '123123123123'
+    #    m1 = nr.metric(id)
+    #    m2 = nr.metric(id)
+    #
+    #    x = m1['value']
+    #    m2.write(x+1)
+    #    x = m1['value']
+    #
+    # x will have the old/stale value at this point. So don't access a single
+    # metric via multiple objects, or alway use read() if you must.
+    #
+    # No __setitem__ is implemented. That seemed fraught with peril though the
+    # mapping from __setitem__ into write() and update() calls is quite obvious.
+    # [ or the mapping to "update a local cache copy and eventually have a commit() ]
+    #
+    # If you specify a non-existent key you will see a KeyError exception. You
+    # will also potentially still cause a server interaction if there is no cache.
+    #
+    def __getitem__(self, key):
+        self.__ensureCache()
+        return self.__cachedState[key]
+
+    # Allow things like: if 'photoURL' in m
+    def __contains__(self, key):
+        self.__ensureCache()
+        return key in self.__cachedState
+
+    # Allow things like: for key in m
+    def __iter__(self):
+        self.__ensureCache()
+        return self.__cachedState.__iter__()
+
+    # printable/human representation of a metric
+    def __str__(self):
+        rslt = "<NumerousMetric "
+        try:
+            self.__ensureCache()
+            v = self.__cachedState      # just for brevity
+            rslt += "'{}' [{}] = {}".format(v['label'],v['id'],v['value'])
+        except NumerousError as x:      # you likely have a bogus id
+            if x.code == 400:           # yup, "Bad Request"
+                rslt += "BAD-ID: '{}'".format(self.id)
+            else:
+                rslt += "SERVER-ERROR: {}".format(x.reason)
+        return rslt + ">"
 
     # Just a small wrapper around nr._makeAPIcontext, to use our API table
     # (vs the Numerous class one) and to automatically supply {metricId}
@@ -215,8 +329,9 @@ class NumerousMetric:
     # Return the naked numeric value or the full dict (dictionary=True)
     def read(self, dictionary=False):
         api = self.__getAPI('metric', 'GET')
-        v = self.nr._simpleAPI(api)
-        return v if dictionary else v['value']
+        self.__cachedState = self.nr._simpleAPI(api)
+        v = self.__cachedState
+        return v.copy() if dictionary else v['value']
 
     # "Validate" a metric object.
     # There really is no way to do this in any way that carries much weight.
@@ -290,6 +405,7 @@ class NumerousMetric:
         for k in dict:
             params[k] = dict[k]
 
+        self.__cachedState = None    # bcs subscriptions count changes
         api = self.__getAPI('subscription', 'PUT', userId=userId)
         return self.nr._simpleAPI(api, jdict=params)
 
@@ -305,7 +421,7 @@ class NumerousMetric:
     #   updated allows you to specify the timestamp associated with the value
     #      -- it must be a string in the format described in the NumerousAPI
     #         documentation. Example: '2015-02-08T15:27:12.863Z'
-    #         NOTE: The server API implementation REQUIRES the fractional 
+    #         NOTE: The server API implementation REQUIRES the fractional
     #               seconds be EXACTLY 3 digits. No other syntax will work.
     #               You will get 400/BadRequest if your format is incorrect.
     #               In particular a direct strftime won't work; you will have
@@ -320,15 +436,16 @@ class NumerousMetric:
         if updated:
             j['updated'] = updated
 
+        self.__cachedState = None  # will need to refresh cache
         api = self.__getAPI('events', 'POST')
         try:
             v = self.nr._simpleAPI(api, jdict=j)
 
-        except NumerousError as v:
+        except NumerousError as x:
             # if onlyIf was specified and the error is "conflict"
             # (meaning: no change), raise ConflictError specifically
-            if onlyIf and v.code == 409:
-                raise NumerousMetricConflictError(v.details, 0, "No Change")
+            if onlyIf and x.code == 409:
+                raise NumerousMetricConflictError(x.details, 0, "No Change")
             else:
                 raise         # never mind, plain NumerousError is fine
 
@@ -358,7 +475,8 @@ class NumerousMetric:
             newParams[k] = dict[k]
 
         api = self.__getAPI('metric', 'PUT')
-        return self.nr._simpleAPI(api, jdict=newParams)
+        self.__cachedState = self.nr._simpleAPI(api, jdict=newParams)
+        return self.__cachedState.copy()
 
     #
     # common code for writing an interaction (comment/like/error)
@@ -398,10 +516,11 @@ class NumerousMetric:
     def photo(self, imageDataOrOpenFile, mimeType="image/jpeg"):
         api = self.__getAPI('photo', 'POST')
         mpart = { 'image' : ( 'image.img', imageDataOrOpenFile, mimeType) }
-        v = self.nr._simpleAPI(api, multipart=mpart)
-        return v
+        self.__cachedState = self.nr._simpleAPI(api, multipart=mpart)
+        return self.__cachedState.copy()
 
     def photoDelete(self):
+        self.__cachedState = None    # I suppose we could have deleted photoURL
         api = self.__getAPI('photo', 'DELETE')
         v = self.nr._simpleAPI(api)
         # there is no return value
@@ -430,12 +549,10 @@ class NumerousMetric:
     # server (read the metric) and return the given field... you could
     # do the very same yourself. So I only implemented a few useful ones.
     def label(self):
-        v = self.read(dictionary=True)
-        return v['label']
+        return self['label']
 
     def webURL(self):
-        v = self.read(dictionary=True)
-        return v['links']['web']
+        return self['links']['web']
 
     # the photoURL returned by the server in the metrics parameters
     # still requires authentication to fetch (it then redirects to the "real"
@@ -454,6 +571,7 @@ class NumerousMetric:
     # Be really sure you got this call correct because it cannot be undone
     # Deletes the metric from the numerous server
     def crushKillDestroy(self):
+        self.__cachedState = None
         api = self.__getAPI('metric', 'DELETE')
         v = self.nr._simpleAPI(api)
         # there is no return value
