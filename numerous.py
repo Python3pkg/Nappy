@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150210-1.5.0"
+_NumerousClassVersionString = "20150211-1.5.0x"
 
 #
 # metric object
@@ -281,7 +281,7 @@ class NumerousMetric:
     #    x = m1['value']
     #
     # x will have the old/stale value at this point. So don't access a single
-    # metric via multiple objects, or alway use read() if you must.
+    # metric via multiple objects, or always use read() if you must.
     #
     # No __setitem__ is implemented. That seemed fraught with peril though the
     # mapping from __setitem__ into write() and update() calls is quite obvious.
@@ -306,18 +306,18 @@ class NumerousMetric:
 
     # printable/human representation of a metric
     def __str__(self):
-        rslt = "<NumerousMetric "
+        rslt = "<NumerousMetric @ {}: ".format(hex(id(self)))
         try:
             self.__ensureCache()
             v = self.__cachedState      # just for brevity
             rslt += "'{}' [{}] = {}".format(v['label'],v['id'],v['value'])
-        except NumerousError as x:      # you likely have a bogus id
-            if x.code == 400:           # yup, "Bad Request"
-                rslt += "**INVALID-ID** : '{}'".format(self.id)
-            elif x.code == 404:
-                rslt += "**ID-NOT-FOUND** : '{}'".format(self.id)
+        except NumerousError as x:                    # you likely have a bogus id
+            if x.code == requests.codes.bad_request:  # yup, "Bad Request"
+                rslt += "**INVALID-ID** '{}'".format(self.id)
+            elif x.code == requests.codes.not_found:
+                rslt += "**ID-NOT-FOUND** '{}'".format(self.id)
             else:
-                rslt += "**SERVER-ERROR** : {}".format(x.reason)
+                rslt += "**SERVER-ERROR** {}".format(x.reason)
         return rslt + ">"
 
     # Just a small wrapper around nr._makeAPIcontext, to use our API table
@@ -351,7 +351,7 @@ class NumerousMetric:
         except NumerousError as v:
             # bad request (400) is a completely bogus metric ID whereas
             # not found (404) is a well-formed ID that simply does not exist
-            if v.code == 400 or v.code == 404:
+            if v.code in (requests.codes.bad_request, requests.codes.not_found):
                 return False
             else:                # anything else you figure out yourself!
                 raise
@@ -446,8 +446,8 @@ class NumerousMetric:
         except NumerousError as x:
             # if onlyIf was specified and the error is "conflict"
             # (meaning: no change), raise ConflictError specifically
-            if onlyIf and x.code == 409:
-                raise NumerousMetricConflictError(x.details, 0, "No Change")
+            if onlyIf and x.code == requests.codes.conflict:    # 409
+                raise NumerousMetricConflictError(x.details, x.code, "No Change")
             else:
                 raise         # never mind, plain NumerousError is fine
 
@@ -555,6 +555,12 @@ class NumerousMetric:
 
     def webURL(self):
         return self['links']['web']
+
+    # the phone application generates a nmrs:// URL as a way to link to
+    # the application view of a metric (vs a web view). This function makes
+    # one of those for you so you don't have to "know" the format of it.
+    def appURL(self):
+        return "nmrs://metric/" + self.id
 
     # the photoURL returned by the server in the metrics parameters
     # still requires authentication to fetch (it then redirects to the "real"
@@ -750,6 +756,11 @@ class Numerous:
         self.agentString = myVersion + " " + pyV + " NumerousAPI/v2"
         self._filterDuplicates = True    # see discussion elsewhere
 
+    # __str__ method for human readable string.
+    # No particularly good reason for this other than "because can"
+    def __str__(self):
+        return "<Numerous {{{}}} @ {}>".format(self.serverName, hex(id(self)))
+
 
     # XXX This is primarily for testing; control filtering of bogus duplicates
     #     If you are calling this you are probably doing something wrong.
@@ -821,13 +832,15 @@ class Numerous:
             return False               # too many tries
 
         # if the server actually has failed with too busy, sleep and try again
-        if tparams['result-code'] == 500:
+        # XXX although I've seen the server do this under high load, I'm not
+        #     100% convinced that a retry is "safe" in this condition.
+        if tparams['result-code'] == requests.codes.server_error:   # 500
             nr.statistics['throttle500'] += 1
             time.sleep(backoff)
             return True
 
         # if we weren't told to back off, no need to retry
-        if tparams['result-code'] != 429:
+        if tparams['result-code'] != requests.codes.too_many_requests:  #429
             # but if we are closing in on the limit then slow ourselves down
             # note that some errors don't communicate rateleft so we have to
             # check for that as well (will be -1 here if wasn't sent to us)
@@ -920,7 +933,9 @@ class Numerous:
 
     def metricByLabel(self, labelspec, matchType='FIRST'):
         def raiseConflict(s1,s2):
-            raise NumerousMetricConflictError([s1, s2], 409, "More than one match")
+            raise NumerousMetricConflictError([s1, s2],
+                                              requests.codes.conflict,
+                                              "More than one match")
 
         bestMatch = ( None, 0 )
 
@@ -1086,11 +1101,21 @@ class Numerous:
 
             self.statistics['serverRequests'] += 1
 
+            t0 = time.time()
             resp = requests.request(httpmeth, url,
                                     auth=self.authTuple,
                                     data=data,
                                     files=multipart,
                                     headers=hdrs)
+            # record elapsed round trip time, possibly in an array
+            et = time.time() - t0
+            try:
+                times = self.statistics['serverResponseTimes']
+                times.insert(0, et)
+                times.pop()
+            except AttributeError:
+                self.statistics['serverResponseTimes'] = et
+
             if self.__debug > 9:
                 print(resp.text)
 
@@ -1156,7 +1181,7 @@ class Numerous:
             rj['value'] = "Server returned an HTTP error: " + reason
             rj['id'] = url
 
-            if resp.status_code == requests.codes.unauthorized:
+            if resp.status_code == requests.codes.unauthorized:    # 401
                 raise NumerousAuthError(rj, resp.status_code, reason)
             else:
                 raise NumerousError(rj, resp.status_code, reason)
@@ -1327,7 +1352,7 @@ class _Numerous_ChunkedAPIIter:
                 # and you might have no idea what that means when in reality
                 # it meant your metric was bad)
                 if self.__firstTime:
-                    if v.code == 400:      # "Bad Request" is bad metric
+                    if v.code == requests.codes.bad_request:   # bad metric id fmt
                         raise NumerousError(v, v.code, "Bad Metric")
                     else:
                         raise NumerousError(v, v.code, "Getting first item(s)")

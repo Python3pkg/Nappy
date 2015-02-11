@@ -460,6 +460,15 @@ if args.key:
 
 nrServer = Numerous(apiKey=k)
 
+# if we've been asked to report server statistics, enhance the 
+# timestamp reporting to report an array of the last 10 response times
+# (seed the array in the statistics variable; see the class implementation)
+if args.statistics:
+    a = []
+    for i in range(10):
+        a.append(0)
+    nrServer.statistics['serverResponseTimes'] = a
+
 if args.debug:
     if args.debug > 1:
         nrServer.debug(10)    # lol, but 10 turns on extra debug
