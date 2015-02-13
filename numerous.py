@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150211-1.5.0x"
+_NumerousClassVersionString = "20150213-1.5.0x"
 
 #
 # metric object
@@ -739,9 +739,17 @@ class Numerous:
         # where "data" is the throttle policy specific data
         # and "up" is the next (recursive) policy tuple
         #
-        # The system throttleDefault policy uses the data ("40") as
-        # the "arbitrary voluntary limit" for when you are getting close to the limit
-        self.__throttlePolicy = (self.__throttleDefault, 40, None)
+        # The system throttleDefault policy accepts a dictionary as its
+        # data input, with the following keys:
+        #   'voluntary' : threshold for voluntary throttling before actual 429
+        #
+        systemThrottlePolicy = { 'voluntary' : 40 }
+
+        # you can alter the above parameters but keep the default throttle function:
+        if throttleData and not throttle:
+            systemThrottlePolicy = throttleData    # i.e., your data
+
+        self.__throttlePolicy = (self.__throttleDefault, systemThrottlePolicy, None)
 
         # if you specified your own throttle policy store it
         if throttle:
@@ -824,6 +832,8 @@ class Numerous:
         attempt = tparams['attempt']    # note: is zero on very first try
         if attempt > 0:
             nr.statistics['throttleMultipleAttempts'] += 1
+            if attempt > nr.statistics['throttleMaxAttempt']:
+                nr.statistics['throttleMaxAttempt'] = attempt
 
         try:
             backoff = [ 2, 5, 15, 30, 60 ][attempt]
@@ -845,12 +855,12 @@ class Numerous:
             # note that some errors don't communicate rateleft so we have to
             # check for that as well (will be -1 here if wasn't sent to us)
             #
-            # at constructor time our "throttle data" (td) was set up as the
-            # voluntary arbitrary limit
-            if rateleft >= 0 and rateleft < td:
+            # at constructor time our "throttle data" (td) was set up with
+            # the 'voluntary' arbitrary limit
+            if rateleft >= 0 and rateleft < td['voluntary']:
                 nr.statistics['throttleVoluntaryBackoff'] += 1
                 # arbitrary: 1 sec if more than half left, 3 secs if less
-                if (rateleft*2) > td:
+                if (rateleft*2) > td['voluntary']:
                     time.sleep(1)
                 else:
                     time.sleep(3)
@@ -917,7 +927,7 @@ class Numerous:
     # A version of metric() that accepts a name (label) and attempts to translate
     # that into an ID. This is potentially very expensive, and can be ambiguous.
     # You accept all those risks if you use this. Serious programmatic access
-    # should probably always be done by ID not by name.
+    # should probably always be done by ID not by label.
     #
     # matchType specifies how the matching will be done:
     #
@@ -927,6 +937,12 @@ class Numerous:
     #             length matches you will get one of them (unpredictable which)
     #  * ONE    - Must be exactly one match or NumerousMetricConflictError
     #  * STRING - don't do any regexp. Match the labelspec exactly.
+    #  * ID     - turns this back into almost the same thing as the
+    #             metric() method. The labelspec is taken as an ID and not
+    #             as any type of label at all. But instead of just instantiating
+    #             a metric object with any ID you give, the resulting metric
+    #             object will be validated (read from the server) and if that
+    #             fails then None will be returned instead of a bogus metric.
     #
     #  * anything else is an error
     #
@@ -937,12 +953,18 @@ class Numerous:
                                               requests.codes.conflict,
                                               "More than one match")
 
-        bestMatch = ( None, 0 )
-
         if not matchType:
             matchType = "FIRST"
-        if matchType not in [ "FIRST", "BEST", "ONE", "STRING" ]:
+        if matchType not in [ "FIRST", "BEST", "ONE", "STRING", "ID" ]:
             raise ValueError(matchType)
+        if matchType == "ID":
+            rv = self.metric(labelspec)
+            if not rv.validate():
+                rv = None
+            return rv
+
+        bestMatch = ( None, 0 )
+
 
         if matchType == "STRING":
             rx = None
@@ -1101,14 +1123,14 @@ class Numerous:
 
             self.statistics['serverRequests'] += 1
 
-            t0 = time.time()
             resp = requests.request(httpmeth, url,
                                     auth=self.authTuple,
                                     data=data,
                                     files=multipart,
                                     headers=hdrs)
+
             # record elapsed round trip time, possibly in an array
-            et = time.time() - t0
+            et = resp.elapsed.total_seconds()
             try:
                 times = self.statistics['serverResponseTimes']
                 times.insert(0, et)
