@@ -460,14 +460,11 @@ if args.key:
 
 nrServer = Numerous(apiKey=k)
 
-# if we've been asked to report server statistics, enhance the 
+# if we've been asked to report server statistics, enhance the
 # timestamp reporting to report an array of the last 10 response times
 # (seed the array in the statistics variable; see the class implementation)
 if args.statistics:
-    a = []
-    for i in range(10):
-        a.append(0)
-    nrServer.statistics['serverResponseTimes'] = a
+    nrServer.statistics['serverResponseTimes'] = [0]*10
 
 if args.debug:
     if args.debug > 1:
@@ -627,7 +624,7 @@ def printEventResults(r, fld):
             if fld and not isEventOrInteractionId(fld):
                 print(i.get(fld,None))
             else:
-                # the initial value when a metric is created 
+                # the initial value when a metric is created
                 # does not have an authorId (is this a server bug?)
                 # so we need to be careful...
                 a = i.get('authorId', 'INITIAL-CREATION-VALUE')
@@ -801,7 +798,7 @@ else:
                     metric = None
             if not metric:
                 metric = nrServer.metric(r['ID'])
-            
+
             # this helps humans figure out they have screwed up
             # if we were doing name translation see if the metric translated
             # Only do this when args.name because it's extra overhead so we

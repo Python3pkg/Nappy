@@ -14,21 +14,6 @@
 import argparse
 import numerous
 
-# This being a test program, we have some definite hackery going on in here.
-# The wrapper:
-#  * counts the number of 429 errors encountered
-#  * hacks the 'voluntary' limit so it never happens
-#  * exports the entire tparams just for informational/debug
-#
-def throttleWrap(nr, tparams, td, up):
-    td['parameters'] = tparams.copy()
-    if tparams['result-code'] == 429:        # count the 429 codes we see
-        td['429'] = td.get('429',0) + 1      # (defensive in case not initialized)
-    sysTd = up[1]
-    sysTd['voluntary'] = -1                  # so we'll never voluntary backoff
-    return up[0](nr, tparams, sysTd, up[2])  # invoke system default throttle
-
-
 #
 # arguments:
 #    -c credspec : the usual
@@ -58,35 +43,32 @@ args = parser.parse_args()
 
 k = numerous.numerousKey(args.credspec)
 
-throttled = {}
-nr = numerous.Numerous(apiKey=k, throttle=throttleWrap, throttleData=throttled)
+def throttleNoVoluntary(nr, tp, td, up):
+    if tp['result-code'] in (429, 500):
+        return up[0](nr, tp, up[1], up[2])
+    else:
+        return False
+
+nr = numerous.Numerous(apiKey=k, throttle=throttleNoVoluntary)
+
+# alternate lambda way to "spell" that
+#nr = numerous.Numerous(apiKey=k,
+#              throttle= lambda nr, tp, td, up:
+#                (tp['result-code'] in (429, 500)) and up[0](nr, tp, up[1], up[2]))
 
 testmetric = None
 
 if args.metric:
-
-    #     - first attempt to use it as a metric ID. If that works, use that metric.
-    try:
-        testmetric = nr.metric(args.metric)
-        ignored = testmetric.read()    # just testing validity, with exceptions raised
-    except:
-        testmetric = None
-
-    #     - then attempt to look it up ByLabel 'STRING'
-    if not testmetric:
+    #  - first attempt to use it as a metric ID. If that works, use that metric.
+    #  - then attempt to look it up ByLabel 'STRING'
+    #  - then attempt to look it up ByLabel 'ONE' (regexp processing will work)
+    for mt in [ 'ID', 'STRING', 'ONE' ]:
         try:
-            testmetric = nr.metricByLabel(args.metric, matchType='STRING')
-            ignored = testmetric.read()
-        except:
-            testmetric = None
-
-    #     - then attempt to look it up ByLabel 'ONE' (regexp processing will work)
-    if not testmetric:
-        try:
-            testmetric = nr.metricByLabel(args.metric, matchType='ONE')
-            ignored = testmetric.read()
-        except:
-            testmetric = None
+            testmetric = nr.metricByLabel(args.metric, matchType = mt)
+            if testmetric:
+                break
+        except numerous.NumerousError:   # can potentially get "conflict"
+            pass
 
 
 # At this point either we found a metric (not None) or we have to create one.
@@ -100,9 +82,6 @@ if not testmetric:
     deleteIt = True
 
 
-# reset the throttle data in case we incurred any 429 above! :)
-throttled['429'] = 0
-
 if args.debug:
     nr.debug(10)
 
@@ -112,14 +91,17 @@ if args.debug:
 if args.statistics:
     nr.statistics['serverResponseTimes'] = [0]*10    # last 10
 
-while throttled['429'] < args.n429 and args.limit != 0:
-    ignored = testmetric.read()
+expectedVal = testmetric.read()
+
+while nr.statistics['throttle429'] < args.n429 and args.limit != 0:
+    if testmetric.read() != expectedVal:
+        print("Huh, got a wrong value")
+        exit(1)
     if args.limit > 0:               # because -1 means "forever"
         args.limit -= 1
 
 if args.statistics:
     print(nr.statistics)
-    print(throttled)
 
 if deleteIt:
     testmetric.crushKillDestroy()

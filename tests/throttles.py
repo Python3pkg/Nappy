@@ -53,6 +53,20 @@ def NperM(nr, tparams, td, up):
     return up[0](nr, tparams, up[1], up[2])
 
 
+#
+# This throttle policy disables the voluntary backoff 
+# of the built-in throttle policy. It does that by simply
+# not invoking the built-in policy EXCEPT if we are in 
+# the 429 or 500 error condition, in which case we let the
+# default policy handle it.
+#
+def throttleNoVoluntary(nr, tparams, td, up):
+    if tparams['result-code'] in ( 429, 500):
+        return up[0](nr, tparams, up[1], up[2])
+    return False
+
+lambda nr, tp, td, up: (tp['result-code'] in (429, 500)) and up[0](nr, tp, up[1], up[2])
+
 
 
 
