@@ -16,6 +16,7 @@ DQ='"'           # handy at times
 QUICK=no
 DEVTEST=no
 NRTEST=./nrTEST      # only used in DEVTEST case
+T429TEST=./t429.py   # only used in the DEVTEST case
 
 #
 # OPTIONS
@@ -85,10 +86,24 @@ then
     PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
     if [ $? -ne 0 ]; then echo "python v2 failed"; exit 1; fi
 
+    if [ $QUICK = "no" ]
+    then
+        echo ' ... ... T429 PYTHON 2 ... ...'
+        PYTHONPATH=.. python $T429TEST --statistics
+        echo ' ... ... T429 DONE(P2) ... ...'
+    fi
+
     echo ' - - - - TESTING PYTHON 3 - - - -'
 
     PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
     if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
+
+    if [ $QUICK = "no" ]
+    then
+        echo ' ... ... T429 PYTHON 3 ... ...'
+        PYTHONPATH=.. python3 $T429TEST --statistics
+        echo ' ... ... T429 DONE(P3) ... ...'
+    fi
 
     exit 0
 fi
