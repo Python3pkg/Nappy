@@ -109,6 +109,87 @@ then
 fi
 
 
+####### yatom test program #######
+# This is the python program that runs the atomicity tests
+# We just recreate it each time in a tmp file because it's easy with a HERE DOC
+#
+ATOMICTESTPROGRAM=/tmp/nrAtomicTester$$
+cat > $ATOMICTESTPROGRAM <<EOF
+
+import argparse
+import numerous
+import threading
+
+try:
+  import queue
+except:    # python 2
+  import Queue as queue
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-n', '--nwrites', type=int, default=50)
+parser.add_argument('-m', '--metric')
+parser.add_argument('-p', '--parallel', type=int, default=-1)
+parser.add_argument('testtype', choices=['ADD', 'ONLY'])
+args = parser.parse_args()
+
+if args.parallel < 1:
+    args.parallel = args.nwrites
+
+def tester(k, mID, n, wargs, q):
+    nr = numerous.Numerous(apiKey=k, throttle= lambda nr, tp, td, up:
+                (tp['result-code'] in (429, 500)) and up[0](nr, tp, up[1], up[2]))
+    testmetric = nr.metric(mID)
+    for i in range(n):
+        try:
+            v = testmetric.write(1, **wargs)
+        except numerous.NumerousMetricConflictError:
+            v = "NoChange"
+        q.put(v)
+
+apiKey = numerous.numerousKey(None)
+nrMain = numerous.Numerous(apiKey=apiKey)
+
+testmetric = nrMain.metric(args.metric)
+
+testmetric.write(0)
+
+if args.testtype == "ADD":
+    wargs = { 'add' : True }
+else:
+    wargs = { 'onlyIf' : True }
+
+outputQ = queue.Queue()
+
+# create the threads...
+theThreads = []
+for i in range(args.parallel):
+    nToWrite = args.nwrites//args.parallel
+    # account for residue, some threads will write 1 extra
+    if i < (args.nwrites%args.parallel):
+        nToWrite += 1
+
+    threadArgs = (apiKey, testmetric.id, nToWrite, wargs, outputQ)
+    theThreads.append(threading.Thread(target=tester, args=threadArgs))
+
+# start all the threads...
+for t in theThreads:
+    t.start()
+
+# wait for all the threads
+for t in theThreads:
+    t.join()
+
+# print all the results
+while True:
+    try:
+        print(outputQ.get(block=False))
+    except queue.Empty:
+        break
+
+exit(0)
+
+EOF
 
 
 # silly little function to add numbers using python
@@ -118,6 +199,30 @@ fi
 # result in RESULT
 add() {
   RESULT=`$PYTHON -c "print( $1 + $2 )"`
+}
+
+# clever hack to ensure we have at least $1 + $2 API quota remaining
+# (or sleep until we get fresh allocation). This is used before
+# the atomicity tests to ensure they won't be foiled (slowed down)
+# by rate throttling when their entire point is to hammer the server
+ensureAPIQuota() {
+  if [ "x$2" = "x" ]
+  then
+    EXTRA=0
+  else
+    EXTRA=$2
+  fi
+  TPGM="
+import numerous
+import time
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+nr.ping()
+remain=nr.statistics['rate-remaining']
+if remain < ($1 + $EXTRA):
+  time.sleep(nr.statistics['rate-reset']+1)
+"
+
+  $PYTHON -c "$TPGM"
 }
 
 # for bailing out with a message
@@ -509,22 +614,14 @@ done
 # They are supposed to operate atomically (they didn't in the past
 # but that was a server bug and is now fixed)
 
-infomsg "Atomicity test. 30 x $NR -w+q $METRIC 1 -- in parallel"
-doNR -wq $METRIC 0
-for i in 0 1 2 3 4 5 6 7 8 9
-do
-  # we actually do 10x invocations of NR that each do three updates
-  # this seems to increase *effective* parallism at the server though
-  # obviously a lot depends on timing and speed of the client machine
-  $NR -w+q $METRIC 1 $METRIC 1 $METRIC 1 &
-done
-
-wait
-
-verifyNR SOMECONTINUE 30 "Atomicity failed" $METRIC
+NADD=100
+ensureAPIQuota $RESULT 25
+infomsg "Atomicity test. $NADD ADD +1 in parallel"
+$PYTHON $ATOMICTESTPROGRAM -n $NADD -m $METRIC -p 10 ADD > $TMPFILE
+verifyNR SOMECONTINUE $NADD "Atomicity failed" $METRIC
 
 
-# fire off 50 "onlyIfChanged" operations in parallel
+# fire off a bunch of "onlyIfChanged" operations in parallel
 # only one of them should change the variable, the rest should be "NoChange"
 #
 # XXX the server does implement these atomically, so I've never been
@@ -533,123 +630,9 @@ verifyNR SOMECONTINUE 30 "Atomicity failed" $METRIC
 # another version of the numerous server atomicity test
 yatom() {
 
-    #
-    # fire off 50 "onlyIfChanged" operations in parallel
-    # only one of them should change it, the rest should be "NoChange"
-    #
-
-    # note the use of files to attempt to synchronize all of these.
-    # it can take a while for them all to get forked and situated
-
-
-    TPGM="import argparse
-import time
-import numerous
-
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-metric = nr.metric(\"$METRIC\")
-
-# force libs to load
-try:
-  ignored = metric.write(metric.read(), onlyIf=True)
-except numerous.NumerousMetricConflictError:
-  pass
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument('readyfile', nargs=1)
-parser.add_argument('gofile1', nargs=1)
-parser.add_argument('gofile2', nargs=1)
-
-args = parser.parse_args()
-
-# tell the world we ready
-f = open(args.readyfile[0],'w+')
-
-# the first loop doesn't fully busy-wait so everyone can get started
-while True:
-  try:
-    g = open(args.gofile1[0])
-    break
-  except IOError:
-    time.sleep(2)
-
-# so after you make the gofile1 you should wait more than 2 seconds
-# (my test program waits 15 seconds) then make gofile2
-while True:
-  try:
-    g = open(args.gofile2[0])
-    break
-  except IOError:
-    pass
-
-# and off we go!!!
-r = 'Changed'
-try:
-  metric.write(100, onlyIf=True)
-except numerous.NumerousMetricConflictError:
-  r = 'NoChange'
-print (r)
-"
-
-    NTIMES=50    # XXX you have to update the for loops to match
-
-    doNR -wq $METRIC 0
-
-    # get the ID of that event so we can delete it later if successful
-    ZID=`$NR -E --limit 1 $METRIC'[id]'`
-    RFILEPFX=$TMPFILE.RFX
-    mkdir $RFILEPFX
-    RFX="RFXRFXRFX"
-
-    G1=$TMPFILE.GO.1
-    G2=$TMPFILE.GO.2
-
-    for j in 0 1 2 3 4
-    do
-      for i in 0 1 2 3 4 5 6 7 8 9
-      do
-        $PYTHON -c "$TPGM" $RFILEPFX/$RFX$j$i $G1 $G2 > $TMPFILE.$j$i &
-      done
-    done
-
-    # now wait for all of the programs to indicate they are ready
-    while :
-    do
-        NREADY=`ls -l $RFILEPFX | grep $RFX | wc -l`
-	if [ $NREADY -eq $NTIMES ]
-	then
-	    break
-	fi
-        sleep 2
-    done
-
-    # make the first go file to get them all busy waiting
-    touch $G1
-
-    # give them a chance to all start busy-waiting
-    sleep 15
-
-    # off to the races!
-    touch $G2
-    wait
-
-    rm $G1 $G2
-    rm -rf $RFILEPFX
-
-    rm -f $TMPFILE
-    touch $TMPFILE
-
-    for j in 0 1 2 3 4
-    do
-      for i in 0 1 2 3 4 5 6 7 8 9
-      do
-        echo Results from: $j$i >> $TMPFILE
-        cat $TMPFILE.$j$i >> $TMPFILE
-        rm -f $TMPFILE.$j$i
-        echo " - - - " >> $TMPFILE
-      done
-    done
+    NTIMES=50
+    ensureAPIQuota $NTIMES 25
+    $PYTHON $ATOMICTESTPROGRAM -n $NTIMES -p 10 -m "$METRIC" ONLY > $TMPFILE
 
     # There should be NTIMES - 1 "NoChange" entries and only one that changed it
     X=`grep NoChange $TMPFILE | wc -l`
@@ -671,6 +654,8 @@ then
 else
   quickmsg "Skipping test of parallel onlyIf updates"
 fi
+
+rm -f $ATOMICTESTPROGRAM
 
 # TEST like ...
 doNR -wIq $METRIC '{ "kind": "like" }'
