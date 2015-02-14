@@ -89,6 +89,9 @@ then
     if [ $QUICK = "no" ]
     then
         echo ' ... ... T429 PYTHON 2 ... ...'
+        echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
+        echo 'Just expect a bunch of raw statistics output if this works'
+        echo ' ... '
         PYTHONPATH=.. python $T429TEST --statistics
         echo ' ... ... T429 DONE(P2) ... ...'
     fi
@@ -101,6 +104,9 @@ then
     if [ $QUICK = "no" ]
     then
         echo ' ... ... T429 PYTHON 3 ... ...'
+        echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
+        echo 'Just expect a bunch of raw statistics output if this works'
+        echo ' ... '
         PYTHONPATH=.. python3 $T429TEST --statistics
         echo ' ... ... T429 DONE(P3) ... ...'
     fi
@@ -615,7 +621,7 @@ done
 # but that was a server bug and is now fixed)
 
 NADD=100
-ensureAPIQuota $RESULT 25
+ensureAPIQuota $NADD 25
 infomsg "Atomicity test. $NADD ADD +1 in parallel"
 $PYTHON $ATOMICTESTPROGRAM -n $NADD -m $METRIC -p 10 ADD > $TMPFILE
 verifyNR SOMECONTINUE $NADD "Atomicity failed" $METRIC
@@ -630,7 +636,7 @@ verifyNR SOMECONTINUE $NADD "Atomicity failed" $METRIC
 # another version of the numerous server atomicity test
 yatom() {
 
-    NTIMES=50
+    NTIMES=100
     ensureAPIQuota $NTIMES 25
     $PYTHON $ATOMICTESTPROGRAM -n $NTIMES -p 10 -m "$METRIC" ONLY > $TMPFILE
 
