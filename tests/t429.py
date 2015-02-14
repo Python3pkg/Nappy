@@ -3,7 +3,7 @@
 # Test program to force the throttle code to generate 429 throttling
 #
 # Note that generally the server doesn't respond fast enough (usually
-# about 3 requests per second) for a single thread to ever hit the rate 
+# about 3 requests per second) for a single thread to ever hit the rate
 # limit (300 per minute) by itself.
 #
 # For this reason I have set the default for the -p option to 3.
@@ -15,8 +15,12 @@
 #
 import argparse
 import numerous
-import queue
 import threading
+
+try:
+  import queue
+except:    # python2
+  import Queue as queue
 
 #
 # arguments:
@@ -30,9 +34,10 @@ import threading
 #    --statistics : display statistics when done
 #
 #
-# Note that it is not usually possible to generate enough traffic with one thread
-# to hit the rate limit, as the server tends to operate at only about 3 requests
-# per second (sequentially; but throughput scales with parallel requests). 
+# Note that it is not usually possible to generate enough traffic with
+# one thread to hit the rate limit, as the server tends to operate at
+# only about 3 requests per second (sequentially; but throughput scales
+# with parallel requests).
 #
 # If no metric is supplied, the program will create its own metric and use it
 # and delete that metric on normal exit (any abnormal exit won't delete it)
