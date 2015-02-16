@@ -161,7 +161,7 @@ if args.parallel < 1:
 
 def tester(k, mID, n, wargs, q):
     nr = numerous.Numerous(apiKey=k, throttle= lambda nr, tp, td, up:
-                (tp['result-code'] in (429, 500)) and up[0](nr, tp, up[1], up[2]))
+                (tp['result-code'] == 429) and up[0](nr, tp, up[1], up[2]))
     testmetric = nr.metric(mID)
     for i in range(n):
         try:
@@ -240,7 +240,7 @@ try:
     remain=nr.statistics['rate-remaining']
     refresh=nr.statistics['rate-reset']
 except numerous.NumerousError as x:
-    if x.code == 429:           # we are in the Too Many condition already
+    if x.code in (429,500,504): # we are in overloaded condition already
         remain = 0              # report that as zero
         refresh=nr.statistics['rate-reset']
     else:
@@ -274,6 +274,7 @@ ensureAPIQuota() {
 
   if [ $HAVE -lt $NEEDED ]
   then
+    if [ $REFRESH -lt 1 ]; then REFRESH=66; fi
     infomsg " ... Delaying $REFRESH seconds for new API quota, only have $HAVE."
     sleep $REFRESH
   else
