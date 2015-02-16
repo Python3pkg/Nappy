@@ -34,54 +34,76 @@ T429TEST=./t429.py   # only used in the DEVTEST case
 #    --500 specifically ignore (retry) 500/504 errors from the server.
 #          XXX this is a temporary hack when NumerousApp server is being buggy
 #
-# Note the option parsing is hokey and doesn't allow e.g., -XQ use -X -Q
 #
 
 SOMECONTINUE=no
 RUN429=yes
 
+# allows for combining e.g., -QX and also supports the --option form (for --500)
+
 while [ $# -gt 0 ]
 do
   case "x$1" in
+    # all the long forms go here like this
     x--500)
       NR500="--retry500"
       shift
       ;;
 
-    x-4)
-      RUN429=no
-      shift
+    x--*)
+      echo "Illegal option $1"
+      exit 2
       ;;
 
-    x-C)
-      SOMECONTINUE="yes"
-      shift
-      ;;
 
-    x-Q)
-      QUICK=yes
-      RUN429=no
-      shift
-      ;;
-
-    x-X)
-      if [ "x$PYX" != "x" ]; then PYTHON="$PYX"; fi
-      if [ "x$NRX" != "x" ]; then NR="$NRX"; fi
-      echo "Using \"$PYTHON\" for python interpreter"
-      echo "Using \"$NR\" for the nr command program"
-      if [ "x$NRTX" != "x" -a "x$NRTX" != "x$NRTEST" ]
+    # all the single opts have to be further getopt-ified and looped here
+    x-*)
+      args=`getopt XQCD4 "$1"`
+      if [ $? -ne 0 ]
       then
-          echo " ... and NRTEST is overridden to $NRTX"
-          NRTEST="$NRTX"
+        echo "Usage: -XQDC4 --500"
+        exit 2
       fi
+      for arg in $args
+      do
+        case "x$arg" in
+          x-4)
+            RUN429=no
+            ;;
+
+          x-C)
+            SOMECONTINUE="yes"
+            ;;
+
+          x-Q)
+            QUICK=yes
+            RUN429=no
+            ;;
+
+          x-X)
+            if [ "x$PYX" != "x" ]; then PYTHON="$PYX"; fi
+            if [ "x$NRX" != "x" ]; then NR="$NRX"; fi
+            echo "Using \"$PYTHON\" for python interpreter"
+            echo "Using \"$NR\" for the nr command program"
+            if [ "x$NRTX" != "x" -a "x$NRTX" != "x$NRTEST" ]
+            then
+                echo " ... and NRTEST is overridden to $NRTX"
+                NRTEST="$NRTX"
+            fi
+            ;;
+
+          x-D)
+            DEVTEST=yes
+            ;;
+        esac
+      done
       shift
       ;;
 
-    x-D)
-      DEVTEST=yes
-      shift
+    *)
+      echo "No additional arguments required/allowed"
+      exit 2
       ;;
-
   esac
 done
 
