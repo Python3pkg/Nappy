@@ -60,7 +60,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150213-1.5.0x"
+_NumerousClassVersionString = "20150216-1.5.0xx"
 
 #
 # metric object
@@ -151,6 +151,9 @@ class NumerousMetric:
     # GET an actual metric, or update (PUT) it (parameters, not value)
     __APIInfo['metric'] = {
         'endpoint' : '/v1/metrics/{metricId}' ,
+        'PUT' : {
+            'endpoint' : '/v2/metrics/{metricId}'
+        },
         # no entries needed for GET/PUT because no special codes etc
         'DELETE' : {
             'success-codes' : [ 204 ]
@@ -238,9 +241,17 @@ class NumerousMetric:
     # ensure that the metric attribute cache exists
     def __ensureCache(self):
         if not self.__cachedState:
-            ignored = self.read()    # just read()ing to force cachedState into being
-
-
+            try:
+                ignored = self.read()  # read() just to force cachedState into being
+            except NumerousError:      # pass these along, e.g., unauthorized
+                raise
+            except Exception as x:
+                # The most common reason to be here is a low-level network failure.
+                # For example, you lost your network connection (e.g., no WiFi)
+                # Rather than hit you with something bizarre we turn it into
+                # a NumerousError but keep all the detail we can in case you want it.
+                details = { 'exception' : x }
+                raise NumerousError(details, 0, "Could not obtain metric state")
 
     # ===================================
     # __getitem__ : support for [] access
@@ -310,7 +321,7 @@ class NumerousMetric:
         try:
             self.__ensureCache()
             v = self.__cachedState      # just for brevity
-            rslt += "'{}' [{}] = {}".format(v['label'],v['id'],v['value'])
+            rslt += "'{0[label]}' [{0[id]}] = {0[value]}".format(v)
         except NumerousError as x:                    # you likely have a bogus id
             if x.code == requests.codes.bad_request:  # yup, "Bad Request"
                 rslt += "**INVALID-ID** '{}'".format(self.id)
@@ -756,9 +767,7 @@ class Numerous:
             self.__throttlePolicy = (throttle, throttleData, self.__throttlePolicy)
 
         # The version string will be used for the user-agent
-        pyV = "(Python {}.{}.{})".format(sys.version_info.major,
-                                         sys.version_info.minor,
-                                         sys.version_info.micro)
+        pyV = "(Python {0.major}.{0.minor}.{0.micro})".format(sys.version_info)
 
         myVersion = "NW-Python-NumerousClass/" + _NumerousClassVersionString
         self.agentString = myVersion + " " + pyV + " NumerousAPI/v2"
@@ -819,10 +828,8 @@ class Numerous:
     #    True  : means that the response is, indeed, to be interpreted as some
     #            sort of rate-limit failure and should be discarded. The original
     #            request will be sent again. Obviously it's a very bad idea to
-    #            return True in cases where the server might have done some
-    #            anything non-idempotent. We assume that a 429 ("Too Many") or
-    #            a 500 ("Too Busy") response from the server means the server didn't
-    #            actually do anything (so a retry, timed appropriately, is ok)
+    #            return True in cases where the server might have done 
+    #            anything non-idempotent.
     #
     # All of this seems overly general for what basically amounts to "sleep sometimes"
     #
@@ -840,14 +847,6 @@ class Numerous:
         except IndexError:
             nr.statistics['throttleMaxed'] += 1
             return False               # too many tries
-
-        # if the server actually has failed with too busy, sleep and try again
-        # XXX although I've seen the server do this under high load, I'm not
-        #     100% convinced that a retry is "safe" in this condition.
-        if tparams['result-code'] == requests.codes.server_error:   # 500
-            nr.statistics['throttle500'] += 1
-            time.sleep(backoff)
-            return True
 
         # if we weren't told to back off, no need to retry
         if tparams['result-code'] != requests.codes.too_many_requests:  #429

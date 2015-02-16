@@ -29,14 +29,30 @@ T429TEST=./t429.py   # only used in the DEVTEST case
 #    -C allows for continuing after certain particular failures.
 #       (workaround for testing despite certain server bugs, e.g., atomicity)
 #
+#    -4 do not run the 429 throttling test. This is also implied by -Q
+#
+#    --500 specifically ignore (retry) 500/504 errors from the server.
+#          XXX this is a temporary hack when NumerousApp server is being buggy
+#
 # Note the option parsing is hokey and doesn't allow e.g., -XQ use -X -Q
 #
 
 SOMECONTINUE=no
+RUN429=yes
 
 while [ $# -gt 0 ]
 do
   case "x$1" in
+    x--500)
+      NR500="--retry500"
+      shift
+      ;;
+
+    x-4)
+      RUN429=no
+      shift
+      ;;
+
     x-C)
       SOMECONTINUE="yes"
       shift
@@ -44,6 +60,7 @@ do
 
     x-Q)
       QUICK=yes
+      RUN429=no
       shift
       ;;
 
@@ -83,10 +100,10 @@ then
 
     echo ' - - - - TESTING PYTHON 2 - - - -'
 
-    PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
+    NR500="$NR500" PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
     if [ $? -ne 0 ]; then echo "python v2 failed"; exit 1; fi
 
-    if [ $QUICK = "no" ]
+    if [ $RUN429 = "yes" ]
     then
         echo ' ... ... T429 PYTHON 2 ... ...'
         echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
@@ -98,10 +115,10 @@ then
 
     echo ' - - - - TESTING PYTHON 3 - - - -'
 
-    PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
+    NR500="$NR500" PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
     if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
 
-    if [ $QUICK = "no" ]
+    if [ $RUN429 = "yes" ]
     then
         echo ' ... ... T429 PYTHON 3 ... ...'
         echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
@@ -207,6 +224,36 @@ add() {
   RESULT=`$PYTHON -c "print( $1 + $2 )"`
 }
 
+# report how much API quota is available, for infotainment purposes.
+# Note that we turn off the Numerous class API throttling so we can 
+# query the server (make one API call) and get a result without ourselves
+# being subject to rate throttling...
+
+getAPIQuota() {
+  TPGM="
+import numerous
+remain = -1
+refresh = -1
+nr = numerous.Numerous(apiKey=\"$APIKEY\", throttle=lambda nr,tp,td,up: False)
+try:
+    nr.ping()
+    remain=nr.statistics['rate-remaining']
+    refresh=nr.statistics['rate-reset']
+except numerous.NumerousError as x:
+    if x.code == 429:           # we are in the Too Many condition already
+        remain = 0              # report that as zero
+        refresh=nr.statistics['rate-reset']
+    else:
+        raise                   # anything else, not sure what is going on, reraise it
+
+print('{} {}'.format(remain, refresh))
+"
+  $PYTHON -c "$TPGM"
+}
+
+
+
+
 # clever hack to ensure we have at least $1 + $2 API quota remaining
 # (or sleep until we get fresh allocation). This is used before
 # the atomicity tests to ensure they won't be foiled (slowed down)
@@ -218,18 +265,22 @@ ensureAPIQuota() {
   else
     EXTRA=$2
   fi
-  TPGM="
-import numerous
-import time
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-nr.ping()
-remain=nr.statistics['rate-remaining']
-if remain < ($1 + $EXTRA):
-  time.sleep(nr.statistics['rate-reset']+1)
-"
 
-  $PYTHON -c "$TPGM"
+  NEEDED=`$PYTHON -c "print( $1 + $EXTRA )"`
+  infomsg "Ensuring at least $NEEDED API quota available..."
+  getAPIQuota >$TMPFILE
+  HAVE=`awk '{print $1}' $TMPFILE`
+  REFRESH=`awk '{print $2}' $TMPFILE`
+
+  if [ $HAVE -lt $NEEDED ]
+  then
+    infomsg " ... Delaying $REFRESH seconds for new API quota, only have $HAVE."
+    sleep $REFRESH
+  else
+    infomsg " ... Have $HAVE API quota; no delay required."
+  fi
 }
+
 
 # for bailing out with a message
 failout() {
@@ -255,8 +306,14 @@ doNR() {
       ;;
   esac
 
-  echo "TESTING::: $NR $*"
-  $NR "$@" > $TMPFILE
+  if [ "x$NR500" = "x" ]     # XXX just to make the output pretty (no extra space) ...
+  then
+    echo "TESTING::: $NR $*"
+  else
+    echo "TESTING::: $NR $NR500 $*"
+  fi
+
+  $NR $NR500 "$@" > $TMPFILE
   STATUS=$?
   if [ $STATUS != $GOODSTATUS ]; then failout "... $NR exit status $STATUS"; fi
   RESULT=`cat $TMPFILE`
@@ -616,16 +673,20 @@ do
 done
 
 
-# fire off 30 add +1 operations in parallel.
+# fire off 100 add +1 operations in parallel.
 # They are supposed to operate atomically (they didn't in the past
 # but that was a server bug and is now fixed)
 
-NADD=100
-ensureAPIQuota $NADD 25
-infomsg "Atomicity test. $NADD ADD +1 in parallel"
-$PYTHON $ATOMICTESTPROGRAM -n $NADD -m $METRIC -p 10 ADD > $TMPFILE
-verifyNR SOMECONTINUE $NADD "Atomicity failed" $METRIC
-
+if [ $QUICK = yes ]
+then
+  quickmsg "Skipping atomicity test."
+else
+  NADD=100
+  ensureAPIQuota $NADD 25
+  infomsg "Atomicity test. $NADD ADD +1 in parallel"
+  $PYTHON $ATOMICTESTPROGRAM -n $NADD -m $METRIC -p 10 ADD > $TMPFILE
+  verifyNR SOMECONTINUE $NADD "Atomicity failed" $METRIC
+fi
 
 # fire off a bunch of "onlyIfChanged" operations in parallel
 # only one of them should change the variable, the rest should be "NoChange"
@@ -816,6 +877,9 @@ doNR -S $METRIC
 
 if [ $QUICK = no ]
 then
+  # we don't really need to have any specific quota available; however, to be
+  # nice to the server we delay here if we aren't already at least at 200
+  ensureAPIQuota 200
   infomsg "testing 200 x $NR -Iwq $METRIC commentNNN"
 
   CMTS=""

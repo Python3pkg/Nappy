@@ -317,6 +317,7 @@ parser.add_argument('-D', '--debug', action="count")
 parser.add_argument('--delete', action="store_true")
 parser.add_argument('-U', '--user', action="store_true")
 parser.add_argument('--statistics', action="store_true")  # info/debugging support
+parser.add_argument('--retry500', action="store_true")    # retry 500/504 errors
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
 wgx.add_argument('-E', '--event', action="store_true")
@@ -458,7 +459,26 @@ if args.key:
       exit(1)
 
 
-nrServer = Numerous(apiKey=k)
+# this throttle function implements retries on HTTP errors 500/504
+# It's not usually specified; but can be useful during debugging
+def throttleRetryServerErrors(nr, tp, td, up):
+    if tp['result-code'] in (500, 504):
+        nr.statistics['throttleRetryServerErrors'] += 1
+        # The server failed -- usually because of high load.
+        # Delay an arbitrary amount of time and try again.
+        # XXX we don't know for certain that a retry won't
+        #     end up duplicating the API call.
+        time.sleep(45)     # arbitrary; might be better keyed off attempt number
+        return True        # and do a retry
+    # all other cases let the built-in policy handle it
+    else:
+        return up[0](nr, tp, up[1], up[2])
+
+tf = None
+if args.retry500:
+    tf = throttleRetryServerErrors
+
+nrServer = Numerous(apiKey=k, throttle=tf)
 
 # if we've been asked to report server statistics, enhance the
 # timestamp reporting to report an array of the last 10 response times
@@ -477,6 +497,9 @@ try:
     nrServer.ping()
 except NumerousAuthError:
     print("Authorization failed. Likely cause is bad credentials (API key)")
+    exit(1)
+except NumerousError as x:
+    print("Server error: {} {} ({})".format(x.code, x.reason, x.details))
     exit(1)
 
 #
@@ -680,356 +703,364 @@ def doPhotoWrite(metricOrNR, imageFName):
 
 
 
+def mainCommandProcessing(nr, args):
 
+    # XXX it is important that these keys cannot appear in a base36 encoding
+    #     Wow that was an obscure bug, when this was used with this mspec:
+    #               http://n.numerousapp.com/m/1bzm892hvg4id
+    #     that happened to include 'id' (the previous key used here)
+    #     and that false-positived an "if 'id' in mspec" test
+    #
+    # The whole way all this works is a hack that obviously grew over time :)
+    #
+    mspecIDKey = '_*id*_'
+    mspecFIELDKey = '_*field*_'
 
-
-# XXX it is important that these keys cannot appear in a base36 encoding
-#     Wow that was an obscure bug, when this was used with this mspec:
-#               http://n.numerousapp.com/m/1bzm892hvg4id
-#     that happened to include 'id' (the previous key used here)
-#     and that false-positived an "if 'id' in mspec" test
-#
-# The whole way all this works is a hack that obviously grew over time :)
-#
-mspecIDKey = '_*id*_'
-mspecFIELDKey = '_*field*_'
-
-#
-# Sometimes it is m1/v1 pairs sometimes just metrics
-#
-if args.write or (args.delete and not args.photo):
-    metrics = args.keyvals[0::2]
-    values = args.keyvals[1::2]
-
-else:
-    metrics = []
-    for m in args.keyvals:
-        if '[' in m and not args.killmetric:
-            x = m.split('[')
-            # very rudimentary syntax checks
-            if len(x) != 2 or not x[1].endswith(']'):
-                print("bad metric specification",m)
-                exit(1)
-            # nuke the trailing ']' on the field spec
-            m = { mspecIDKey : x[0], mspecFIELDKey : x[1][:-1] }
-        metrics.append(m)
-
-
-#
-# If we're doing this by name, translate the IDs first
-#
-
-resultList = []
-exitStatus = 0
-
-#
-# If no keys in the argument list then:
-#    If doing subscriptions, get the top-level subscriptions list
-#    Otherwise get the list of all keys
-#
-# Otherwise read or write the values. In either case accumulate
-# the resultList for subsequent output
-#
-
-if len(metrics) == 0:
-    if args.subs:
-        for s in nrServer.subscriptions():
-            # this is a hack but if you specify -n we just display
-            # the metric ID and the name this way
-            if not args.quiet:               # quiet is dumb, but whatever
-                if args.name:
-                    id = s['metricId']
-                    print("{} {}".format(id, nrServer.metric(id).label()))
-                else:
-                    print(s)
-                    print(" ")
-    elif args.user:
-        u = nrServer.user()
-        if not args.quiet:
-            if args.json:
-                print(json.dumps(u))
-            else:
-                print("User: {userName} [ {fullName} ], id: {id}".format(**u))
+    #
+    # Sometimes it is m1/v1 pairs sometimes just metrics
+    #
+    if args.write or (args.delete and not args.photo):
+        metrics = args.keyvals[0::2]
+        values = args.keyvals[1::2]
 
     else:
-        vlist = getMetrics(nrServer, args.limit)
-
-        # arguably "quiet" is dumb, but it does test connectivity
-        if not args.quiet:
-            for v in vlist:
-                if args.json:
-                    print(json.dumps(v))
-                elif args.name:
-                    print(v['id'] + " " + v['label'])
-                else:
-                    print(v['id'])
-
-elif args.user and args.write and args.photo:
-    v = doPhotoWrite(nrServer, args.keyvals[0])
-    print (v)
-
-else:
-    while len(metrics):
-        mspec = metrics.pop(0)
-        if mspecIDKey in mspec:
-            r = { 'ID' : mspec[mspecIDKey], 'FIELD' : mspec[mspecFIELDKey] }
-        else:
-            r = { 'ID' : mspec }
-
-        # if we are creating a new metric, don't make a NumerousMetric from ID
-        creatingNew = (args.write and args.metric and r['ID'][0] == '+')
-        invalidMetric = False
-        if creatingNew:
-            r['ID'] = r['ID'][1:]     # strip the plus
-            metric = None
-        else:
-            metric = None
-            if args.name:
-                if args.regexp:
-                    mtype = 'ONE'
-                else:
-                    mtype = 'STRING'
-
-                s = r['ID']
-                try:
-                    metric = nrServer.metricByLabel(s, matchType=mtype)
-                except NumerousMetricConflictError as e:
-                    print("More than one match: ", e.details)
-                    metric = None
-            if not metric:
-                metric = nrServer.metric(r['ID'])
-
-            # this helps humans figure out they have screwed up
-            # if we were doing name translation see if the metric translated
-            # Only do this when args.name because it's extra overhead so we
-            # don't do it when you look more likely to be a script (because
-            # you used the lower level metric ID directly)
-            if args.name and not metric.validate():
-                invalidMetric = True
-
-        if invalidMetric:
-            r['result'] = "ERROR / Invalid Metric: " + r['ID']
-            exitStatus = 1
-        elif args.delete:
-            if args.photo:
-                delWhat = None
-                r['delID'] = "photo"
-            else:
-                delWhat = values.pop(0)
-                r['delID'] = delWhat
-            try:
-                if args.event:
-                    metric.eventDelete(delWhat)
-                elif args.interaction:
-                    metric.interactionDelete(delWhat)
-                elif args.photo:
-                    metric.photoDelete()
-                else:                  # never happens
-                    raise ValueError   # should not happen
-                r['result'] = "DELETED"
-            except NumerousError as v:
-                exitStatus = 1
-                r['result'] = "ERROR / Not Found"
-
-        elif args.write and args.photo:
-            # the matching value given is (should be) a file name
-            r['result'] = doPhotoWrite(metric, values.pop(0))
-
-        elif args.write:
-            val = values.pop(0)
-
-            # sometimes val is a JSON and sometimes it is naked
-            # to simplify the rest of this turn it into something
-            # that is ALWAYS a dictionary, but if it was naked we
-            # put the "val" in as '__naked__' key
-            try:
-                jval = json.loads(val)
-                # this test serves two purposes: see if it is dict-like,
-                # and protect our __naked__ hack
-                if '__naked__' in jval:
-                    # seriously, you are a twit...
-                    print("Invalid Numerous JSON given: ", val)
+        metrics = []
+        for m in args.keyvals:
+            if '[' in m and not args.killmetric:
+                x = m.split('[')
+                # very rudimentary syntax checks
+                if len(x) != 2 or not x[1].endswith(']'):
+                    print("bad metric specification",m)
                     exit(1)
-            except (TypeError, ValueError):
-                # it was naked, or malformed.
-                try:
-                    jval = { '__naked__' : valueParser(val) }
-                except ValueError:     # e.g., "EPOCHTIME: " bad format
-                    jval = { '__naked__' : val }  # this will get dealt with below
+                # nuke the trailing ']' on the field spec
+                m = { mspecIDKey : x[0], mspecFIELDKey : x[1][:-1] }
+            metrics.append(m)
 
-            if args.interaction:
-                # interactions are comments/likes/errors
-                # if you specify a naked string it's a comment
-                # you specify the other forms (or comments if you like)
-                # as a JSON. Figure out what's going on ... then do it
 
-                if '__naked__' in jval:
-                    j = { 'kind': "comment", 'commentBody' : val }
-                else:
-                    j = jval
+    #
+    # If we're doing this by name, translate the IDs first
+    #
 
-                if j['kind'] == "comment":
-                    metric.comment(j['commentBody'])
-                elif j['kind'] == "error":
-                    metric.sendError(j['commentBody'])
-                elif j['kind'] == "like":
-                    metric.like()
-                r['result'] = "OK"
+    resultList = []
+    exitStatus = 0
 
-            elif args.metric and not creatingNew:
-                # this is the metric update case (but not create)
-                # NOTE: This is for metric attributes (description etc)
-                #       you cannot update the value parameter this way
-                #       (server will ignore any 'value' in the json)
-                # We don't implement any naked shortcut; val MUST be JSON
-                if '__naked__' in jval:
-                    r['result'] = "Update requires JSON for paramters"
-                    exitStatus = 1
-                else:
-                    r['result'] = metric.update(jval)
+    #
+    # If no keys in the argument list then:
+    #    If doing subscriptions, get the top-level subscriptions list
+    #    Otherwise get the list of all keys
+    #
+    # Otherwise read or write the values. In either case accumulate
+    # the resultList for subsequent output
+    #
 
-            elif creatingNew:
-                # if you specified it naked, it's just the value or "private"
-                if '__naked__' in jval:
-                    vp = jval.pop('__naked__')
-                    if vp == "private":
-                        jval['private'] = True
-                        jval['value'] = 0    # this is implied by API anyway
+    if len(metrics) == 0:
+        if args.subs:
+            for s in nr.subscriptions():
+                # this is a hack but if you specify -n we just display
+                # the metric ID and the name this way
+                if not args.quiet:               # quiet is dumb, but whatever
+                    if args.name:
+                        id = s['metricId']
+                        print("{} {}".format(id, nr.metric(id).label()))
                     else:
-                        jval['value'] = vp
-
-                metric = nrServer.createMetric(r['ID'], attrs=jval)
-                if args.json:
-                    r['result'] = metric.read(dictionary=True)
-                else:
-                    r['result'] = metric.id
-
-            else:
-                # we are writing a metric value
-                try:
-                    val = valueParser(val)
-                    try:
-                        r['result'] = metric.write(val,
-                                                   onlyIf = args.onlyIf,
-                                                   add = args.plus,
-                                                   dictionary = args.json)
-                    except NumerousMetricConflictError as e:
-                        exitStatus = 1
-                        if args.json:
-                            r['result'] = { 'errorCode' : e.code,
-                                            'errorDetails' : e.details,
-                                            'errorReason' : e.reason }
-                        else:
-                            r['result'] = "NoChange"
-
-                except ValueError:
-                    exitStatus = 1
-                    r['result'] = "Bad value syntax: '{}'".format(val)
-
-
-        elif args.killmetric:
-            try:
-                metric.crushKillDestroy()
-                r['result'] = r['ID'] + " Deleted"
-            except NumerousError as e:
-                r['result'] = r['ID'] + " delete FAILED " + e.reason
-
-        elif args.interaction:
-            if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
-                r['result'] = [ metric.interaction(r['FIELD']) ]
-            else:
-                iterable = metric.interactions()
-                r['result'] = getIterableStuff(metric, iterable, args.limit)
-
-        elif args.stream:
-            # no support for reading a single stream item
-            # (read a single item using the interaction/event interfaces)
-            iterable = metric.stream()
-            r['result'] = getIterableStuff(metric, iterable, args.limit)
-
-        elif args.event:
-            if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
-                r['result'] = [ metric.event(r['FIELD']) ]
-            else:
-                iterable = metric.events()
-                r['result'] = getIterableStuff(metric, iterable, args.limit)
-
-        elif args.photo:
-            r['result'] = metric.photoURL()
-
+                        print(s)
+                        print(" ")
         elif args.user:
-            u = nrServer.user(r['ID'])
-            if 'FIELD' in r:
-                r['result'] = u[r['FIELD']]
-            else:
-                r['result'] = u
-
-        elif args.subs:
-            try:
-                # metricID[+] means get all the subscriptions for the metric
-                if mspecFIELDKey in mspec and mspec[mspecFIELDKey] == '+':
-                    slist = []
-                    for s in metric.subscriptions():
-                        slist.append(s)
-                    r['result'] = slist
+            u = nr.user()
+            if not args.quiet:
+                if args.json:
+                    print(json.dumps(u))
                 else:
-                    d = metric.subscription()
+                    print("User: {userName} [ {fullName} ], id: {id}".format(**u))
+
+        else:
+            vlist = getMetrics(nr, args.limit)
+
+            # arguably "quiet" is dumb, but it does test connectivity
+            if not args.quiet:
+                for v in vlist:
+                    if args.json:
+                        print(json.dumps(v))
+                    elif args.name:
+                        print(v['id'] + " " + v['label'])
+                    else:
+                        print(v['id'])
+
+    elif args.user and args.write and args.photo:
+        v = doPhotoWrite(nr, args.keyvals[0])
+        print (v)
+
+    else:
+        while len(metrics):
+            mspec = metrics.pop(0)
+            if mspecIDKey in mspec:
+                r = { 'ID' : mspec[mspecIDKey], 'FIELD' : mspec[mspecFIELDKey] }
+            else:
+                r = { 'ID' : mspec }
+
+            # if we are creating a new metric, don't make a NumerousMetric from ID
+            creatingNew = (args.write and args.metric and r['ID'][0] == '+')
+            invalidMetric = False
+            if creatingNew:
+                r['ID'] = r['ID'][1:]     # strip the plus
+                metric = None
+            else:
+                metric = None
+                if args.name:
+                    if args.regexp:
+                        mtype = 'ONE'
+                    else:
+                        mtype = 'STRING'
+
+                    s = r['ID']
+                    try:
+                        metric = nr.metricByLabel(s, matchType=mtype)
+                    except NumerousMetricConflictError as e:
+                        print("More than one match: ", e.details)
+                        metric = None
+                if not metric:
+                    metric = nr.metric(r['ID'])
+
+                # this helps humans figure out they have screwed up
+                # if we were doing name translation see if the metric translated
+                # Only do this when args.name because it's extra overhead so we
+                # don't do it when you look more likely to be a script (because
+                # you used the lower level metric ID directly)
+                if args.name and not metric.validate():
+                    invalidMetric = True
+
+            if invalidMetric:
+                r['result'] = "ERROR / Invalid Metric: " + r['ID']
+                exitStatus = 1
+            elif args.delete:
+                if args.photo:
+                    delWhat = None
+                    r['delID'] = "photo"
+                else:
+                    delWhat = values.pop(0)
+                    r['delID'] = delWhat
+                try:
+                    if args.event:
+                        metric.eventDelete(delWhat)
+                    elif args.interaction:
+                        metric.interactionDelete(delWhat)
+                    elif args.photo:
+                        metric.photoDelete()
+                    else:                  # never happens
+                        raise ValueError   # should not happen
+                    r['result'] = "DELETED"
+                except NumerousError as v:
+                    exitStatus = 1
+                    r['result'] = "ERROR / Not Found"
+
+            elif args.write and args.photo:
+                # the matching value given is (should be) a file name
+                r['result'] = doPhotoWrite(metric, values.pop(0))
+
+            elif args.write:
+                val = values.pop(0)
+
+                # sometimes val is a JSON and sometimes it is naked
+                # to simplify the rest of this turn it into something
+                # that is ALWAYS a dictionary, but if it was naked we
+                # put the "val" in as '__naked__' key
+                try:
+                    jval = json.loads(val)
+                    # this test serves two purposes: see if it is dict-like,
+                    # and protect our __naked__ hack
+                    if '__naked__' in jval:
+                        # seriously, you are a twit...
+                        print("Invalid Numerous JSON given: ", val)
+                        exit(1)
+                except (TypeError, ValueError):
+                    # it was naked, or malformed.
+                    try:
+                        jval = { '__naked__' : valueParser(val) }
+                    except ValueError:     # e.g., "EPOCHTIME: " bad format
+                        jval = { '__naked__' : val }  # this will get dealt with below
+
+                if args.interaction:
+                    # interactions are comments/likes/errors
+                    # if you specify a naked string it's a comment
+                    # you specify the other forms (or comments if you like)
+                    # as a JSON. Figure out what's going on ... then do it
+
+                    if '__naked__' in jval:
+                        j = { 'kind': "comment", 'commentBody' : val }
+                    else:
+                        j = jval
+
+                    if j['kind'] == "comment":
+                        metric.comment(j['commentBody'])
+                    elif j['kind'] == "error":
+                        metric.sendError(j['commentBody'])
+                    elif j['kind'] == "like":
+                        metric.like()
+                    r['result'] = "OK"
+
+                elif args.metric and not creatingNew:
+                    # this is the metric update case (but not create)
+                    # NOTE: This is for metric attributes (description etc)
+                    #       you cannot update the value parameter this way
+                    #       (server will ignore any 'value' in the json)
+                    # We don't implement any naked shortcut; val MUST be JSON
+                    if '__naked__' in jval:
+                        r['result'] = "Update requires JSON for paramters"
+                        exitStatus = 1
+                    else:
+                        r['result'] = metric.update(jval)
+
+                elif creatingNew:
+                    # if you specified it naked, it's just the value or "private"
+                    if '__naked__' in jval:
+                        vp = jval.pop('__naked__')
+                        if vp == "private":
+                            jval['private'] = True
+                            jval['value'] = 0    # this is implied by API anyway
+                        else:
+                            jval['value'] = vp
+
+                    metric = nr.createMetric(r['ID'], attrs=jval)
+                    if args.json:
+                        r['result'] = metric.read(dictionary=True)
+                    else:
+                        r['result'] = metric.id
+
+                else:
+                    # we are writing a metric value
+                    try:
+                        val = valueParser(val)
+                        try:
+                            r['result'] = metric.write(val,
+                                                       onlyIf = args.onlyIf,
+                                                       add = args.plus,
+                                                       dictionary = args.json)
+                        except NumerousMetricConflictError as e:
+                            exitStatus = 1
+                            if args.json:
+                                r['result'] = { 'errorCode' : e.code,
+                                                'errorDetails' : e.details,
+                                                'errorReason' : e.reason }
+                            else:
+                                r['result'] = "NoChange"
+
+                    except ValueError:
+                        exitStatus = 1
+                        r['result'] = "Bad value syntax: '{}'".format(val)
+
+
+            elif args.killmetric:
+                try:
+                    metric.crushKillDestroy()
+                    r['result'] = r['ID'] + " Deleted"
+                except NumerousError as e:
+                    r['result'] = r['ID'] + " delete FAILED " + e.reason
+
+            elif args.interaction:
+                if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
+                    r['result'] = [ metric.interaction(r['FIELD']) ]
+                else:
+                    iterable = metric.interactions()
+                    r['result'] = getIterableStuff(metric, iterable, args.limit)
+
+            elif args.stream:
+                # no support for reading a single stream item
+                # (read a single item using the interaction/event interfaces)
+                iterable = metric.stream()
+                r['result'] = getIterableStuff(metric, iterable, args.limit)
+
+            elif args.event:
+                if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
+                    r['result'] = [ metric.event(r['FIELD']) ]
+                else:
+                    iterable = metric.events()
+                    r['result'] = getIterableStuff(metric, iterable, args.limit)
+
+            elif args.photo:
+                r['result'] = metric.photoURL()
+
+            elif args.user:
+                u = nr.user(r['ID'])
+                if 'FIELD' in r:
+                    r['result'] = u[r['FIELD']]
+                else:
+                    r['result'] = u
+
+            elif args.subs:
+                try:
+                    # metricID[+] means get all the subscriptions for the metric
+                    if mspecFIELDKey in mspec and mspec[mspecFIELDKey] == '+':
+                        slist = []
+                        for s in metric.subscriptions():
+                            slist.append(s)
+                        r['result'] = slist
+                    else:
+                        d = metric.subscription()
+                        if args.json:
+                            r['result'] = d
+                        elif mspecFIELDKey in mspec:
+                            r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
+                        else:
+                            r['result'] = d
+                except NumerousError:
+                    exitStatus = 1
+                    r['result'] = None
+
+            else:
+                try:
+                    # always read the full dictionary... and use the entire
+                    # result if args.json, otherwise use any field value given or
+                    # in the simple case just the value
+                    d = metric.read(dictionary = True)
                     if args.json:
                         r['result'] = d
                     elif mspecFIELDKey in mspec:
                         r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
                     else:
-                        r['result'] = d
-            except NumerousError:
-                exitStatus = 1
-                r['result'] = None
+                        r['result'] = d['value']
+                except NumerousError:
+                    exitStatus = 1
+                    r['result'] = None
 
-        else:
-            try:
-                # always read the full dictionary... and use the entire
-                # result if args.json, otherwise use any field value given or
-                # in the simple case just the value
-                d = metric.read(dictionary = True)
-                if args.json:
-                    r['result'] = d
-                elif mspecFIELDKey in mspec:
-                    r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
-                else:
-                    r['result'] = d['value']
-            except NumerousError:
-                exitStatus = 1
-                r['result'] = None
-
-        resultList.append(r)
+            resultList.append(r)
 
 
-    #
-    # display results accordingly
-    #
-    if not args.quiet:
-        if args.json:
-            j = { 'Results' : resultList }
-            print(json.dumps(j))
-        else:
-            for r in resultList:
-                rslt = r['result']
-                fld = r.get('FIELD',None)
-                if args.delete:
-                    printDeleteResults(r)
-                elif args.write:
-                    print(rslt)
-                elif args.interaction or args.stream:
-                    printStreamResults(rslt, fld)
-                elif args.event:
-                    printEventResults(rslt, fld)
-                else:
-                    print(rslt)       # likely python dict output (use -j for JSON)
+        #
+        # display results accordingly
+        #
+        if not args.quiet:
+            if args.json:
+                j = { 'Results' : resultList }
+                print(json.dumps(j))
+            else:
+                for r in resultList:
+                    rslt = r['result']
+                    fld = r.get('FIELD',None)
+                    if args.delete:
+                        printDeleteResults(r)
+                    elif args.write:
+                        print(rslt)
+                    elif args.interaction or args.stream:
+                        printStreamResults(rslt, fld)
+                    elif args.event:
+                        printEventResults(rslt, fld)
+                    else:
+                        print(rslt)       # likely python dict output (use -j for JSON)
 
 
 
-if args.statistics:
-    print("Statistics:")
-    for k in nrServer.statistics:
-        print("{:>24s}: {}".format(k, nrServer.statistics[k]))
+    if args.statistics:
+        print("Statistics:")
+        for k in nr.statistics:
+            print("{:>24s}: {}".format(k, nr.statistics[k]))
+        
 
-exit(exitStatus)
+    return exitStatus
+
+try:
+    xstat = mainCommandProcessing(nrServer, args)
+except NumerousError as x:
+    print("Server error: {} {} ({})".format(x.code, x.reason, x.details))
+    xstat = 1
+
+exit(xstat)
