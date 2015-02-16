@@ -318,6 +318,8 @@ parser.add_argument('--delete', action="store_true")
 parser.add_argument('-U', '--user', action="store_true")
 parser.add_argument('--statistics', action="store_true")  # info/debugging support
 parser.add_argument('--retry500', action="store_true")    # retry 500/504 errors
+parser.add_argument('-R', '--ratelimits', action="count")
+parser.add_argument('--ensurerate', type=int)             # use with -R
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
 wgx.add_argument('-E', '--event', action="store_true")
@@ -459,6 +461,48 @@ if args.key:
       exit(1)
 
 
+
+# if we've been asked to report on rate limits then just do that first
+# and there is no throttling (because we don't want to be throttled while
+# reporting about throttling lol)
+if args.ratelimits > 0:
+    remain = -1
+    refresh = -1
+    nrRaw = nrServer = Numerous(apiKey=k, throttle=lambda nr,tp,td,up: False)
+    try:
+        nrRaw.ping()
+        remain=nrRaw.statistics['rate-remaining']
+        refresh=nrRaw.statistics['rate-reset']
+    except NumerousError as x:
+        if x.code == 429:       # we are in the Too Many condition already
+            remain = 0          # report that as zero
+        elif x.code == 401:     # make a nice error output with unauthorized
+            print("Server says: {}. Check -c or NUMEROUSAPIKEY environment.".format(x.reason))
+            exit(1)
+        else:
+            raise               # anything else, not sure what is going on, reraise it
+
+
+    if args.ensurerate:
+        t = refresh + 1             # +1 is a just-to-be-sure thing
+        if remain >= args.ensurerate:
+            msg = "No delay needed; have {} operations left.".format(remain)
+            t = 0
+        else:
+            msg = "Delaying {} seconds; only have {} APIs left.".format(t, remain)
+
+        if not args.quiet:
+            print(msg)
+
+        if t > 0:
+            time.sleep(t)
+
+    elif not args.quiet:
+        print("Remaining APIs: {}. New allocation in {} seconds.".format(remain,refresh))
+
+    if args.ratelimits > 1:   # XXX haha, as a hack -RR means just do this then exit
+        exit(0)
+
 # this throttle function implements retries on HTTP errors 500/504
 # It's not usually specified; but can be useful during debugging
 def throttleRetryServerErrors(nr, tp, td, up):
@@ -479,6 +523,7 @@ if args.retry500:
     tf = throttleRetryServerErrors
 
 nrServer = Numerous(apiKey=k, throttle=tf)
+
 
 # if we've been asked to report server statistics, enhance the
 # timestamp reporting to report an array of the last 10 response times
