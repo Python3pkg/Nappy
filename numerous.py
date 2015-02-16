@@ -151,10 +151,9 @@ class NumerousMetric:
     # GET an actual metric, or update (PUT) it (parameters, not value)
     __APIInfo['metric'] = {
         'endpoint' : '/v1/metrics/{metricId}' ,
-        'PUT' : {
+        'PUT' : {        # note that PUT has a /v2 interface but GET does not (yet?).
             'endpoint' : '/v2/metrics/{metricId}'
         },
-        # no entries needed for GET/PUT because no special codes etc
         'DELETE' : {
             'success-codes' : [ 204 ]
         }
