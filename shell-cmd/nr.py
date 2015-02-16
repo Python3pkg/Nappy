@@ -313,12 +313,12 @@ parser.add_argument('-N', '--regexp', action="store_true")
 parser.add_argument('-q', '--quiet', action="store_true")
 parser.add_argument('-w', '--write', action="store_true")
 parser.add_argument('-t', '--limit', type=int, default=-1)
-parser.add_argument('-D', '--debug', action="count")
+parser.add_argument('-D', '--debug', action="count", default=0)
 parser.add_argument('--delete', action="store_true")
 parser.add_argument('-U', '--user', action="store_true")
 parser.add_argument('--statistics', action="store_true")  # info/debugging support
 parser.add_argument('--retry500', action="store_true")    # retry 500/504 errors
-parser.add_argument('-R', '--ratelimits', action="count")
+parser.add_argument('-R', '--ratelimits', action="count", default=0)
 parser.add_argument('--ensurerate', type=int)             # use with -R
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
