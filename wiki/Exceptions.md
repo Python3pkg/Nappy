@@ -14,7 +14,7 @@ The `NumerousError` exception is the general purpose exception raised by the Num
  * `e.details` will be a dictionary containing full-details of the error; the keys in this dictionary vary depending on the error and should probably not be used except as informational/debugging information.
 
 ## NumerousMetricConflictError
-Subclass of `NumerourError`. Raised when you perform a metric `write()` with `onlyIfChanged=True` and the value isn't a change. See metric `write()` for more details. This exception is also thrown by `metricByLabel` in some multiple-match cases.
+Subclass of `NumerousError`. Raised when you perform a metric `write()` with `onlyIfChanged=True` and the value isn't a change. See metric `write()` for more details. This exception is also thrown by `metricByLabel` in some multiple-match cases.
 
 ## NumerousAuthError
 Subclass of `NumerousError`. Raised whenever the NumerousApp server returns an HTTP 401 code. Usually means your API Key is no good (or has become no good).

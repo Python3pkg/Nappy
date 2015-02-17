@@ -3,6 +3,23 @@ You get your API key from your NumerousApp app on your phone/iPad/etc. Go to Set
 
 HTTP Basic Authentication (using your API Key) is used (over https) as described in the NumerousApp API [Authentication](http://docs.numerous.apiary.io/#authentication) documentation.
 
+## For the impatient
+Just do this at the shell:
+
+    echo "yourAPIkeyHere" > ~/.numerousCred
+    NUMEROUSAPIKEY=~/.numerousCred export NUMEROUSAPIKEY
+
+In other words, make a file with your "nmrs_blah3v9483blah" key in it and set environment variable NUMEROUSAPIKEY to point at that file.
+
+Then use the default key management:
+
+    from numerous import Numerous
+    nr = Numerous()
+
+and you are ready to go. Numerous will pick up your key from the file named by the NUMEROUSAPIKEY environment variable.
+
+The remainder of this page contains more details on ways to manage your key.
+
 ## numerousKey() convenience function
 
 Once you have the API key you have to decide how to store it and how to provide it to the Numerous() constructor. A convenience function `numerousKey()` assists with this:
@@ -79,6 +96,12 @@ After that:
     nr = Numerous()
 
 will instantiate a Numerous object using the apiKey found in the .numerousCred file as specified by the environment variable NUMEROUSAPIKEY. 
+
+You could strip this all the way down to putting your key directly into the environment:
+
+    % NUMEROUSAPIKEY=nmrs_blah2348v754blah python myprogram.py
+
+and still just use `nr = Numerous()`; however, doing so potentially exposes your key to anyone who can view process status on the machine (environment variables can be viewed) so this usually isn't a good idea on general principles.
 
 Additional examples:
 

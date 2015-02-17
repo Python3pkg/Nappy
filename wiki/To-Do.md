@@ -1,6 +1,21 @@
 # To Do
 Things that still need to be done, or at least might be useful if done.
 
+## Performance
+I instrumented the code to determine how much time is taken by all the dynamic construction for the APIInfo, _getAPI, _makeAPIContext, etc stuff. On my mac that contributes about 189 microseconds (i.e., less than 1 millisecond) of overhead. It's just not a factor versus the round-trip times to the NumerousApp server.
+
+If you time the end-to-end calls you will be up in the 280 millisecond range with the bulk of this being actual on-the-wire time (i.e., beyond our control). The `requests` library conveniently puts the on-the-wire elapsed time into the response object which the Numerous class makes available via the `statistics` (see below). Thus the maximum theoretical API rate is about 3 to 4 requests per second back and forth to the Numerous server from a single thread. You can definitely get more with multiple threads/processes. Your mileage may vary of course depending on network conditions.
+
+By default the round-trip time (in floating point seconds) of the most recent API request is available in nr.statistics['serverResponseTimes']. 
+
+If you force that element to be an array then the code will keep the most recent N round-trip times (as determined by the size of the array). So, for example:
+
+    nr.statistics['serverResponseTimes'] = [0]*10
+
+will set things up so that the last 10 response times at the requests.request() call level are always available in 'serverResponseTimes'. The most recent time will be the zero'th element in the array.
+
+If you hand instrument the code and perform more experiments you will find there is 4-6 milliseconds of extra overhead buried somewhere in the `requests` module itself. I haven't been able to figure out what that is; I'm guessing it has to do with sockets being closed when objects go out of scope.
+
 ## Exception Wrap Subclass
 By design the Numerous and NumerousMetric classes bubble up most errors as Exceptions and do not hide low-level errors some of which are a little silly. 
 
@@ -21,28 +36,4 @@ So I think there should be two subclasses, NumerousWrap and NumerousMetricWrap, 
             return True
 
 and so forth, overriding (wrapping) just those methods that raise exceptions and handling the "we don't really care" cases accordingly.
-
-## caching?
-Wondering if it is worth creating a caching class that would allow you to do a bunch of things to a metric and then commit() the results. Seems like a lot of work for no good reason though. I've gone back and forth on this.
-
-## namespace vs dict
-Similarly I've gone back and forth on whether it would be good to allow
-
-    m = nr.metric('123123123')
-    print(m.description)
-
-vs what you have to do now:
-
-    m = nr.metric('123123123')
-    mdict = m.read(dictionary=True)
-    print(mdict['description'])
-
-a similar question exists for just letting you do:
-
-    m = nr.metric('123123123')
-    print(m['label'])
-
-My problem with both of these ideas is that the operation would involve talking to the server so it's a lot more expensive than "Just accessing an attribute" would seem to imply. Also it can throw exceptions of course so that's also an argument (I think) against making this that implicit unless maybe it is combined with the cache concept.
-
-Right now you solve all of those problems yourself by fetching the dictionary with `m.read(dictionary=True)` and just operating on the dictionary, and eventually putting it back accordingly (though you have to know whether you need to do `m.write` vs `m.update` or possibly both but that's how the NumerousApp API works).
 

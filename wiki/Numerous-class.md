@@ -17,12 +17,11 @@ In addition to `apiKey` and `server` it is also possible to specify a custom rat
 
 ## Public Attributes
 
-The only public attribute is `serverName` and it is informational only:
+* `serverName` - informational only. The fully qualified domain name of the server. Changing this has no effect (you need to set it at constructor time).
 
-    nr = Numerous()
-    print("Using {} as the server".format(nr.serverName))
+* `agentString` - the user agent string that gets sent to the server with every request. You can set this to whatever you want although there's no really good reason to change it. It has no effect at the server.
 
-once you have instantiated a Numerous() setting `serverName` to anything else will NOT change the server being used.
+* `statistics` - a dictionary containing counters and information about the internal workings of the class and might be useful to examine for testing or debugging. These are instantiated only as needed (so make at least one API call before examining this if you want to see what it contains).
 
 ## Methods
 
@@ -64,9 +63,27 @@ m = nr.metric('https://api.numerousapp.com/metrics/299336148273384')
 
 # the web view URL:
 m = nr.metric('http://n.numerousapp.com/m/1b8xa7fjg92r')
+
+# a dictionary containing an 'id' field
+# so, for example, this works to print all your metrics:
+for mdict in nr.metrics():
+    m = nr.metric(mdict)
+    print(m)
+
+# a dictionary containing a 'metricId' field, such as
+# the dictionary returned by the subscriptions method:
+for sb in nr.subscriptions():
+    m = nr.metric(sb)
+    print(m)
 ```
 
-In each of these forms the proper metric ID is recovered from the URL by simply parsing out the URL fields (and decoding the base 36 web view URL). The NumerousMetric object is instantiated from that parsed/decoded metric ID. No extra server transactions are performed to accomplish this.
+If the passed-in metricId looks like a URL then the tail end of that URL is taken, with base36 decoding in the case of the web-view URL. No sanity checking is performed on this acceptance of the tail-end of the URL; if you have provided a bogus URL you will find out when you go to use the metric (see `validate` if you care).
+
+If the passed-in metricId isn't a URL but is indexable and contains a key 'metricId' or 'id', those will be used (in that order of preference).
+
+Otherwise, and this is the normal/expected case, the passed-in metricId should just be a string representation of the actual metric ID.
+
+In no case is the server contacted. This simply instantiates a `NumerousMetric` object and associates it with the given ID.
 
 ### metricByLabel(labelspec, matchType='FIRST')
 Example usage:
@@ -76,7 +93,7 @@ Example usage:
 
 This will look up your metrics (via the nr.metrics() iterator) and search for one with a label containing 'xyz' _anywhere within the label_ (see below for how to control the matching rules). If a metric is found the corresponding NumerousMetric object is returned (else None).
 
-There are four `matchType` values you can specify and three of them (including the default) treat the `labelspec` as a generalized unanchored regular expression. For example:
+There are five `matchType` values you can specify and three of them (including the default) treat the `labelspec` as a generalized unanchored regular expression. For example:
 
     m = nr.metricByLabel('a')
 
@@ -92,7 +109,7 @@ which is almost equivalent to
 
 except that the 'STRING' variant will throw an exception if there are multiple matches (whereas the other variant returns an arbitrarily-defined first match)
 
-The four valid values for matchType are:
+The five valid values for matchType are:
 
 * matchType='FIRST' - the default. The `labelspec` is used as a python regular expression and a corresponding NumerousMetric() object is instantiated based on the first metric label that matches. There is no way to predict what match will be 'FIRST' if there are multiple metrics that match.
 
@@ -102,9 +119,11 @@ The four valid values for matchType are:
 
 * matchType='STRING' - in this case `labelspec` is treated as an ordinary string and it must exactly match one metric label. In other words the matching criteria is the string comparison `str1 == str2` with no regexp interpretation. If it matches more than one metric label a `NumerousMetricConflictError` will be thrown.
 
+* matchType=`ID` - `labelspec` is treated as a metric ID, not as a label at all. However, unlike calling `nr.metric()` directly, this method does ensure that the resulting metric is accessible. In other words, this calls `m.validate()` for you, and will return `None` rather than an invalid metric object. 
+
 Please note that `matchType` values are all upper-case and are case-sensitive. Specifying `matchType='One'` for example will throw an exception.
 
-For any `matchType` except for 'STRING', the `labelspec` is a python regular expression interpreted using the [`search`](https://docs.python.org/3/library/re.html#re.search) method from the python `re` class. This means it will match any substring of the label unless you specifically anchor it with `^` (start of label) or `$` (end of label). Any regular expression syntax understood by `re.search` may be used in `labelspec`.
+For `matchType` 'FIRST', 'BEST', or 'ONE' the `labelspec` is a python regular expression interpreted using the [`search`](https://docs.python.org/3/library/re.html#re.search) method from the python `re` class. This means it will match any substring of the label unless you specifically anchor it with `^` (start of label) or `$` (end of label). Any regular expression syntax understood by `re.search` may be used in `labelspec`.
 
 In general, the `metricByLabel` method is mostly useful as a convenience when experimenting interactively in a python session. If used "for real" be aware that any `matchType` except for 'FIRST' requires iterating through the entire set of your metrics (metrics produced by the `nr.metrics` iterator). This requires at least one extra server API invocation and may require more if you have many metrics. Also there is no guarantee of label uniqueness; you can easily create two metrics with the same label. You may want to use the `matchType` 'ONE' to catch an ambiguous match.
 
@@ -139,12 +158,12 @@ Returns a dictionary of user attributes as described in the NumerousApp API docu
 Example usage:
 
     # nr is a Numerous()
-    u = nr.photo(open('something.jpg','rb'))    # set user's photo from an opened image file
+    u = nr.userPhoto(open('something.jpg','rb'))    # set user's photo from an opened image file
 
     # or also can set it from raw image data
     # (this example is not a complete image)
     photoData = b"\x47\x49\x46\x38\x39\x61 ... and so forth"
-    u = nr.photo(photoData, mimeType="image/gif")
+    u = nr.userPhoto(photoData, mimeType="image/gif")
 
 Sets the user's photo from `imgInfo` which should either be an open file or raw image bytes. Note that in python3 you must open the file in 'rb' mode to avoid translation of the image bytes into Unicode (this is a generic python3 issue not specific to the Numerous class methods).
 
@@ -187,7 +206,7 @@ Example usage:
 
     print("The most popular metric is {}".format(populars[0]['label']))
 
-Returns a list of the `count` most-popular metrics, sorted by numer of subscribers. This is not an iterator; it returns the full list. There is an undocumented server-imposed limit on `count`; at the time of this writing the server will not return more than 20 metrics via the API.
+Returns a list of the `count` most-popular metrics, sorted by number of subscribers. This is not an iterator; it returns the full list. There is an undocumented server-imposed limit on `count`; at the time of this writing the server will not return more than 20 metrics via the API.
 
 ### ping()
 Example usage:
