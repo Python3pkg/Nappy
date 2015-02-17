@@ -61,7 +61,8 @@ You must have the **requests** library installed ("pip install requests").
 
 This package is available on pip:
 
-    pip install numerous
+    pip install numerous      # python
+    pip3 install numerous     # python3
 
 Alternatively, you can just copy numerous.py into a directory on your PYTHONPATH (system dependent main library location or you can put it in ~/lib and set your PYTHONPATH appropriately).
 
