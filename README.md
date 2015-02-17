@@ -8,6 +8,14 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 
 Works on both python2 and python3.
 
+## New in version 1.5.1
+* /v2 endpoint for metric PUT (update); allows updating new parameters including photoTreatment and graphingOptions.
+* metricByLabel supports ID matchType
+* server response times available in statistics
+* Cleaned up / improved exception generation in several places
+* appURL() method
+* __str__ method for Numerous objects
+
 ## New in version 1.5.0
 
 * Metric fields can be accessed with caching and [ ] subscript notation.
