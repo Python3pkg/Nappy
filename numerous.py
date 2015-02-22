@@ -37,7 +37,6 @@
 # I backported to python2 (only needed two minor hacks); it works.
 # I primarily develop/maintain this code using python3 but I do keep
 # running my test script against python2 as well.
-# It should work but: Caveat User.
 #
 # #################
 
@@ -56,11 +55,11 @@ from collections import defaultdict
 try:
   from http.client import HTTPConnection
 except ImportError:
-  # You are using python2, proceed at your own risk
+  # You are using python2.
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150217-1.5.1"
+_NumerousClassVersionString = "20150221-1.5.1xx"
 
 #
 # metric object
@@ -175,7 +174,12 @@ class NumerousMetric:
     # constructor ... usually invoked via Numerous.metric()
     # =====================================================
     #
-    def __init__(self, id, numerous):
+    def __init__(self, id, numerous=None):
+        # If you don't specify a numerous we make a default one;
+        # this works great if you set up NUMEROUSAPIKEY
+        if not numerous:
+            numerous = Numerous()
+
         #
         # "id" should normally be the naked metric id (as a string).
         #
@@ -194,8 +198,10 @@ class NumerousMetric:
         # encoding of the ID.
         #
         # The decoding logic here makes the specific assumption that
-        # the presence of a '/' indicates a non-naked metric ID. This
+        # the presence of a '/' indicates a URL vs a naked metric ID. This
         # seems a reasonable assumption given that IDs have to go into URLs
+        # and so wouldn't be expected to have '/' characters (they are in
+        # fact numeric though that isn't formally spec'd in the API)
         #
         # "id" can be a dictionary representing a metric or a subscription.
         # We will take (in order) key 'metricId' or key 'id' as the id.
@@ -457,7 +463,7 @@ class NumerousMetric:
             # if onlyIf was specified and the error is "conflict"
             # (meaning: no change), raise ConflictError specifically
             if onlyIf and x.code == requests.codes.conflict:    # 409
-                raise NumerousMetricConflictError(x.details, x.code, "No Change")
+                raise NumerousMetricConflictError(x.details, "No Change")
             else:
                 raise         # never mind, plain NumerousError is fine
 
@@ -791,8 +797,6 @@ class Numerous:
     # return True to force a retry or False to accept this response as-is.
     #
     # The policy this implements:
-    #    if the server failed with too busy, do backoff based on attempt number
-    #
     #    if we are "getting close" to our limit, arbitrarily delay ourselves
     #
     #    if we truly got spanked with "Too Many Requests"
@@ -827,7 +831,7 @@ class Numerous:
     #    True  : means that the response is, indeed, to be interpreted as some
     #            sort of rate-limit failure and should be discarded. The original
     #            request will be sent again. Obviously it's a very bad idea to
-    #            return True in cases where the server might have done 
+    #            return True in cases where the server might have done
     #            anything non-idempotent.
     #
     # All of this seems overly general for what basically amounts to "sleep sometimes"
@@ -946,10 +950,6 @@ class Numerous:
     #
 
     def metricByLabel(self, labelspec, matchType='FIRST'):
-        def raiseConflict(s1,s2):
-            raise NumerousMetricConflictError([s1, s2],
-                                              requests.codes.conflict,
-                                              "More than one match")
 
         if not matchType:
             matchType = "FIRST"
@@ -969,11 +969,13 @@ class Numerous:
         else:
             rx = re.compile(labelspec)
 
+        conflictString = "More than one match"    # for raising MetricConflictError
         for m in self.metrics():
-            if not rx:
+            if not rx:                            # i.e., STRING, no regexp
                 if m['label'] == labelspec:
                     if bestMatch[0]:
-                        raiseConflict(bestMatch[0]['label'], m['label'])
+                        raise NumerousMetricConflictError(bestMatch[0]['label'],
+                                                          m['label'], conflictString)
 
                     bestMatch = ( m, 1 )     # length not actually relevant for STRING
             else:
@@ -982,7 +984,8 @@ class Numerous:
                     if matchType == "FIRST":
                         return self.metric(m['id'])
                     elif matchType == "ONE" and bestMatch[0]:
-                        raiseConflict(bestMatch[0]['label'], m['label'])
+                        raise NumerousMetricConflictError(bestMatch[0]['label'],
+                                                          m['label'], conflictString)
 
                     # if this is "better" than our current best match, keep it
                     sp = matchx.span()
@@ -1102,14 +1105,25 @@ class Numerous:
         if url[0] == '/':                  # i.e. not "http..."
             url = self.__serverURL + url
 
+        hdrs = { 'User-Agent' : self.agentString }
+        data = None
         if jdict and not multipart:     # BTW: passing both is undefined
-            hdrs = { 'Content-Type': 'application/json' }
+            hdrs['Content-Type'] = 'application/json'
             data = json.dumps(jdict)
-        else:
-            hdrs = {}
-            data = None
-
-        hdrs['User-Agent'] = self.agentString
+        elif multipart:
+            # although the underlying requests library allows the data to come
+            # from a readable object (vs being in memory), there's a problem:
+            # If a 429 "Too Many Requests" error occurs we can't retry because
+            # we don't know where to (or even if we can) re-seek to start over.
+            # For that admittedly obscure corner-case, we just always read the
+            # data (which is going to be a user photo or a metric photo) into
+            # memory here. Yeehah for covering all the weird cases...
+            try:
+                mpartTuple = multipart['image']
+                fdata = mpartTuple[1].read()
+                multipart['image'] = ( mpartTuple[0], fdata, mpartTuple[2])
+            except AttributeError:      # it was already just data in memory
+                pass
 
         httpmeth = api.get('http-method','OOOPS')
 
@@ -1121,11 +1135,14 @@ class Numerous:
 
             self.statistics['serverRequests'] += 1
 
-            resp = requests.request(httpmeth, url,
-                                    auth=self.authTuple,
-                                    data=data,
-                                    files=multipart,
-                                    headers=hdrs)
+            try:
+                resp = requests.request(httpmeth, url,
+                                        auth=self.authTuple,
+                                        data=data,
+                                        files=multipart,
+                                        headers=hdrs)
+            except requests.exceptions.RequestException as x:
+                raise NumerousNetworkError(x)
 
             # record elapsed round trip time, possibly in an array
             et = resp.elapsed.total_seconds()
@@ -1162,7 +1179,11 @@ class Numerous:
                    'rate-reset' : rateReset,
                    'result-code' : resp.status_code,
                    'resp' : resp,
-                   'request' : { 'http-method' : httpmeth, 'url' : url } }
+                   'request' : { 'http-method' : httpmeth,
+                                 'url' : url,
+                                 'jdict' : jdict
+                                }
+                 }
 
             td = self.__throttlePolicy[1]
             up = self.__throttlePolicy[2]
@@ -1187,19 +1208,15 @@ class Numerous:
                     # or (more likely? less likely?) there's a server
                     # bug. In any case, we can't decipher reply...
                     # so report that
-                    rj = { 'error-type' : "JSONDecode" }
-                    rj['code'] = resp.status_code
-                    rj['value'] = resp.text
-                    rj['reason'] = "Could not decode server json"
-                    rj['id'] = url;
+                    rj = { 'error-type' : "JSONDecode", 'code' : resp.status_code,
+                           'value' : resp.text, 'id' : url,
+                           'reason' : "Could not decode server json" }
                     raise NumerousError(rj, rj['code'], "ValueError")
         else:
-            rj = { 'error-type' : "HTTPError" }
-            rj['code'] = resp.status_code
             reason = resp.raw.reason
-            rj['reason'] = reason
-            rj['value'] = "Server returned an HTTP error: " + reason
-            rj['id'] = url
+            rj = { 'error-type' : "HTTPError", 'code' : resp.status_code,
+                   'reason' : reason, 'id' : url,
+                   'value' : "Server returned an HTTP error: " + reason }
 
             if resp.status_code == requests.codes.unauthorized:    # 401
                 raise NumerousAuthError(rj, resp.status_code, reason)
@@ -1417,6 +1434,15 @@ class _Numerous_ChunkedAPIIter:
 #
 #    NumerousAuthError
 #       - your creds are no good
+#
+#    NumerousNetworkError
+#       - there was a "somewhat normal" network error. The library catches the
+#         lower level (requests.execptions) errors that you might get if the network
+#         is down, connection times out, that sort of thing, and translates them
+#         into this error (so you can catch it without being exposed to the complexity
+#         that is all this lower-level gobbledygook). In this case the
+#         details attribute will contain the underlying exception info.
+#
 
 class NumerousError(Exception):
     def __init__(self, v, code, reason):
@@ -1424,8 +1450,17 @@ class NumerousError(Exception):
         self.reason = reason
         self.details = v
 
+class NumerousNetworkError(NumerousError):
+    def __init__(self, x):
+        self.code = -1
+        self.reason = "Network Error"
+        self.details = { 'requests-exception' : x }
+
 class NumerousMetricConflictError(NumerousError):
-    pass
+    def __init__(self, v, reason):
+        self.code = requests.codes.conflict    # it's always this (409)
+        self.reason = reason
+        self.details = v
 
 class NumerousChunkingError(NumerousError):
     pass
