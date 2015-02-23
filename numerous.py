@@ -59,7 +59,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150221-1.5.1xx"
+_NumerousClassVersionString = "20150222-1.5.1xx"
 
 #
 # metric object
@@ -150,7 +150,7 @@ class NumerousMetric:
     # GET an actual metric, or update (PUT) it (parameters, not value)
     __APIInfo['metric'] = {
         'endpoint' : '/v1/metrics/{metricId}' ,
-        'PUT' : {        # note that PUT has a /v2 interface but GET does not (yet?).
+        'PUT' : {      # note: PUT has a /v2 interface but GET does not (yet?).
             'endpoint' : '/v2/metrics/{metricId}'
         },
         'DELETE' : {
@@ -176,7 +176,8 @@ class NumerousMetric:
     #
     def __init__(self, id, numerous=None):
         # If you don't specify a numerous we make a default one;
-        # this works great if you set up NUMEROUSAPIKEY
+        # it's ok for one-shots but be careful bcs every metric gets
+        # a separate Numerous() if you do it this way
         if not numerous:
             numerous = Numerous()
 
@@ -205,7 +206,7 @@ class NumerousMetric:
         #
         # "id" can be a dictionary representing a metric or a subscription.
         # We will take (in order) key 'metricId' or key 'id' as the id.
-        # This is convenient when using the metrics() or subscriptions() iterators.
+        # Convenient when using the metrics() or subscriptions() iterators.
         #
         # "id" can be an integer representing a metric ID. Not recommended
         # though it's handy sometimes in cut/paste interactive testing/use.
@@ -213,11 +214,11 @@ class NumerousMetric:
         actualId = None
         try:
             fields = id.split('/')
-            if len(fields) == 1:      # this is the normal string '123123123' case
+            if len(fields) == 1:      # the normal string '123123123' case
                 actualId = fields[0]
             elif fields[-2] == "m":   # http://n.numerousapp.com/m/1x8ba7fjg72d
                 actualId = int(fields[-1],36)
-            else:                     # the other http://blahblah/metricID cases
+            else:                     # http://blahblah/metricID cases
                 actualId = fields[-1]
 
         except AttributeError:        # not a string (no "split" method anyway)
@@ -237,7 +238,7 @@ class NumerousMetric:
             # not string, not dictionary, try integer
             actualId = "{:d}".format(id)   # raises exception if id is not int
 
-        # str-fication is belt/suspenders in case (e.g.) you gave us an int in a dict
+        # str-fication is belt/suspenders in case (e.g.) was an int in a dict
         self.id = str(actualId)
         self.nr = numerous
         self.__cachedState = None
@@ -246,34 +247,25 @@ class NumerousMetric:
     # ensure that the metric attribute cache exists
     def __ensureCache(self):
         if not self.__cachedState:
-            try:
-                ignored = self.read()  # read() just to force cachedState into being
-            except NumerousError:      # pass these along, e.g., unauthorized
-                raise
-            except Exception as x:
-                # The most common reason to be here is a low-level network failure.
-                # For example, you lost your network connection (e.g., no WiFi)
-                # Rather than hit you with something bizarre we turn it into
-                # a NumerousError but keep all the detail we can in case you want it.
-                details = { 'exception' : x }
-                raise NumerousError(details, 0, "Could not obtain metric state")
+            ignored = self.read()  # read() to force cachedState into being
+
 
     # ===================================
     # __getitem__ : support for [] access
     # ===================================
     #
     # If m is a metric, then m[key] accesses a locally cached copy.
-    # The server will be contacted if necessary (e.g., the first time any field
-    # is accessed) but whenever possible the last known values obtained from the
-    # server will be used.
+    # The server will be contacted if necessary (e.g., the first time any
+    # field is accessed) but whenever possible the last known values
+    # obtained from the server will be used.
     #
     # Thus, for example:
     #
     #    x = m['value']
     #    x = m.read()
     #
-    # both put the value into x. However, the read() method contacts the server
-    # every time it is invoked whereas the [] method only contacts the server
+    # both put the value into x. However, the read() method contacts the
+    # server every time whereas the [] method only contacts the server
     # once and saves a local copy of the data.
     #
     # The NumerousMetric class maintains cache consistency if you are the
@@ -284,9 +276,9 @@ class NumerousMetric:
     #     m.write(10)
     #     ten = m['value']
     #
-    # will correctly result in nine==9, ten==10. But there is no cache consistency
-    # maintained if there are other people writing the metric behind your back, nor
-    # is there consistency across different objects:
+    # will correctly result in nine==9, ten==10. But there is no cache
+    # consistency maintained if there are other people writing the metric
+    # behind your back, nor is there consistency across different objects:
     #
     #    id = '123123123123'
     #    m1 = nr.metric(id)
@@ -300,11 +292,13 @@ class NumerousMetric:
     # metric via multiple objects, or always use read() if you must.
     #
     # No __setitem__ is implemented. That seemed fraught with peril though the
-    # mapping from __setitem__ into write() and update() calls is quite obvious.
-    # [ or the mapping to "update a local cache copy and eventually have a commit() ]
+    # mapping from __setitem__ into write() and update() calls is quite
+    # obvious. [ or the mapping to "update a local cache copy and
+    # eventually have a commit() ]
     #
     # If you specify a non-existent key you will see a KeyError exception. You
-    # will also potentially still cause a server interaction if there is no cache.
+    # will also potentially still cause a server interaction if there
+    # is no cache.
     #
     def __getitem__(self, key):
         self.__ensureCache()
@@ -327,7 +321,9 @@ class NumerousMetric:
             self.__ensureCache()
             v = self.__cachedState      # just for brevity
             rslt += "'{0[label]}' [{0[id]}] = {0[value]}".format(v)
-        except NumerousError as x:                    # you likely have a bogus id
+        except NumerousNetworkError:
+            rslt += "**NETWORK-ERROR** Could not contact server"
+        except NumerousError as x:               # you likely have a bogus id
             if x.code == requests.codes.bad_request:  # yup, "Bad Request"
                 rslt += "**INVALID-ID** '{}'".format(self.id)
             elif x.code == requests.codes.not_found:
@@ -367,7 +363,7 @@ class NumerousMetric:
         except NumerousError as v:
             # bad request (400) is a completely bogus metric ID whereas
             # not found (404) is a well-formed ID that simply does not exist
-            if v.code in (requests.codes.bad_request, requests.codes.not_found):
+            if v.code in (requests.codes.bad_request,requests.codes.not_found):
                 return False
             else:                # anything else you figure out yourself!
                 raise
@@ -749,7 +745,7 @@ class Numerous:
         self.authTuple = (apiKey, '')
         self.__debug = 0
         self._arbitraryMaximumTries = 10   # see throttle retry loop
-        self.statistics = defaultdict(int) # mostly for info/debugging; various stats
+        self.statistics = defaultdict(int) # for info/debugging; various stats
 
         # throttle policy tuple is: function, data, up
         # where "data" is the throttle policy specific data
@@ -759,17 +755,20 @@ class Numerous:
         # data input, with the following keys:
         #   'voluntary' : threshold for voluntary throttling before actual 429
         #
-        systemThrottlePolicy = { 'voluntary' : 40 }
+        systemTP = { 'voluntary' : 40 }
 
-        # you can alter the above parameters but keep the default throttle function:
+        # you can alter the above parameters but keep
+        # the default throttle function:
         if throttleData and not throttle:
-            systemThrottlePolicy = throttleData    # i.e., your data
+            systemTP = throttleData    # i.e., your data
 
-        self.__throttlePolicy = (self.__throttleDefault, systemThrottlePolicy, None)
+        self.__throttlePolicy = (self.__throttleDefault, systemTP, None)
 
         # if you specified your own throttle policy store it
         if throttle:
-            self.__throttlePolicy = (throttle, throttleData, self.__throttlePolicy)
+            self.__throttlePolicy = (throttle,
+                                     throttleData,
+                                     self.__throttlePolicy)
 
         # The version string will be used for the user-agent
         pyV = "(Python {0.major}.{0.minor}.{0.micro})".format(sys.version_info)
@@ -803,16 +802,16 @@ class Numerous:
     #    then delay the amount of time the server told us to delay.
     #
     # The arguments supplied to us are:
-    #     nr is the Numerous (handled explicitly so you can write external funcs too)
+    #     nr is the Numerous
     #     tparams is a dictionary containing:
     #         'attempt'        : the attempt number. Zero on the very first try
     #         'rate-remaining' : X-Rate-Limit-Remaining reported by the server
     #         'rate-reset'     : time (in seconds) until fresh rate granted
-    #         'result-code'    : HTTP code from the server (e.g., 409, 200, etc)
-    #         'resp'           : the full-on response object if you must have it
+    #         'result-code'    : HTTP code from server (e.g., 409, 200, etc)
+    #         'resp'           : the full-on response object
     #         'request'        : information about the original request
     #         'debug'          : current debug level
-    #     td is the data you supplied as "throttleData" to the Numerous() constructor
+    #     td is data supplied as "throttleData" to the Numerous() constructor
     #     up is a tuple useful for calling the original system throttle policy:
     #          up[0] is the function pointer
     #          up[1] is the td for *that* function
@@ -823,18 +822,19 @@ class Numerous:
     #
     # It's really (really really) important to understand the return value and
     # the fact that we are invoked AFTER each request:
-    #    False : simply means "don't do more retries". It does not imply anything
-    #            about the success or failure of the request; it simply means that
-    #            this most recent request (response) is the one to "take" as
-    #            the final answer
+    #    False : simply means "don't do more retries". It does not imply
+    #            anything about the success or failure of the request; it
+    #            simply means this most recent request (response) is the
+    #            one to "take" as the final answer
     #
     #    True  : means that the response is, indeed, to be interpreted as some
-    #            sort of rate-limit failure and should be discarded. The original
-    #            request will be sent again. Obviously it's a very bad idea to
-    #            return True in cases where the server might have done
-    #            anything non-idempotent.
+    #            sort of rate-limit failure and should be discarded. The
+    #            original request will be sent again. Obviously it's a very
+    #            bad idea to return True in cases where the server might
+    #            have done anything non-idempotent.
     #
-    # All of this seems overly general for what basically amounts to "sleep sometimes"
+    # All of this seems overly general for what basically amounts
+    # to "sleep sometimes"
     #
     @staticmethod
     def __throttleDefault(nr, tparams, td, up):
@@ -926,8 +926,8 @@ class Numerous:
     def metric(self, metricId):
        return NumerousMetric(metricId, self)
 
-    # A version of metric() that accepts a name (label) and attempts to translate
-    # that into an ID. This is potentially very expensive, and can be ambiguous.
+    # Accepts a name (label) and attempts to translate that into an ID.
+    # This is potentially very expensive, and can be ambiguous.
     # You accept all those risks if you use this. Serious programmatic access
     # should probably always be done by ID not by label.
     #
@@ -939,9 +939,9 @@ class Numerous:
     #             length matches you will get one of them (unpredictable which)
     #  * ONE    - Must be exactly one match or NumerousMetricConflictError
     #  * STRING - don't do any regexp. Match the labelspec exactly.
-    #  * ID     - turns this back into almost the same thing as the
-    #             metric() method. The labelspec is taken as an ID and not
-    #             as any type of label at all. But instead of just instantiating
+    #  * ID     - turns this back into almost the same thing as the metric()
+    #             method. The labelspec is taken as an ID and not as any
+    #             type of label at all. But instead of just instantiating
     #             a metric object with any ID you give, the resulting metric
     #             object will be validated (read from the server) and if that
     #             fails then None will be returned instead of a bogus metric.
@@ -961,41 +961,44 @@ class Numerous:
                 rv = None
             return rv
 
-        bestMatch = ( None, 0 )
-
+        bestMatch = None
+        bestMatchLen = 0
 
         if matchType == "STRING":
             rx = None
         else:
             rx = re.compile(labelspec)
 
-        conflictString = "More than one match"    # for raising MetricConflictError
+        conflictString = "More than one match"
         for m in self.metrics():
             if not rx:                            # i.e., STRING, no regexp
                 if m['label'] == labelspec:
-                    if bestMatch[0]:
-                        raise NumerousMetricConflictError(bestMatch[0]['label'],
-                                                          m['label'], conflictString)
+                    if bestMatch:
+                        raise NumerousMetricConflictError(bestMatch['label'],
+                                                          m['label'],
+                                                          conflictString)
 
-                    bestMatch = ( m, 1 )     # length not actually relevant for STRING
+                    bestMatch = m
             else:
                 matchx = rx.search(m['label'])
                 if matchx:
                     if matchType == "FIRST":
                         return self.metric(m['id'])
-                    elif matchType == "ONE" and bestMatch[0]:
-                        raise NumerousMetricConflictError(bestMatch[0]['label'],
-                                                          m['label'], conflictString)
+                    elif matchType == "ONE" and bestMatch:
+                        raise NumerousMetricConflictError(bestMatch['label'],
+                                                          m['label'],
+                                                          conflictString)
 
                     # if this is "better" than our current best match, keep it
                     sp = matchx.span()
                     matchlen = sp[1] - sp[0]
-                    if matchlen > bestMatch[1]:
-                        bestMatch = ( m, matchlen )
+                    if matchlen > bestMatchLen:
+                        bestMatch = m
+                        bestMatchLen = matchlen
 
         rv = None
-        if bestMatch[0]:
-            rv = self.metric(bestMatch[0]['id'])
+        if bestMatch:
+            rv = self.metric(bestMatch['id'])
 
         return rv
 
@@ -1208,7 +1211,8 @@ class Numerous:
                     # or (more likely? less likely?) there's a server
                     # bug. In any case, we can't decipher reply...
                     # so report that
-                    rj = { 'error-type' : "JSONDecode", 'code' : resp.status_code,
+                    rj = { 'error-type' : "JSONDecode",
+                           'code' : resp.status_code,
                            'value' : resp.text, 'id' : url,
                            'reason' : "Could not decode server json" }
                     raise NumerousError(rj, rj['code'], "ValueError")
@@ -1275,8 +1279,8 @@ class _Numerous_ChunkedAPIIter:
         # see discussion about duplicate filtering elsewhere
         self.__dupfilter = None
         if nr._filterDuplicates:
-            # only set it up for the APIs where it's needed ('dupFilter' tells us)
-            if 'dupFilter' in apiOP:  # no dupFilter implies no dup filtering needed
+            # only set it up for the APIs where needed ('dupFilter' tells us)
+            if 'dupFilter' in apiOP:  # no dupFilter implies not needed
                 self.__dupfilter = { 'prev' : {}, 'current' : {} }
 
     def __iter__(self):
@@ -1299,7 +1303,7 @@ class _Numerous_ChunkedAPIIter:
     # There is a bug in the NumerousApp server which can cause collections
     # to show duplicates of certain events (or interactions/stream items).
     # Explaining the bug in great detail is beyond the scope here; suffice
-    # to say it only happens for events that were recorded nearly-simultaneously
+    # to say it only happens for events that were nearly-simultaneous
     # and happen to be getting reported right at a chunking boundary.
     #
     # The ChunkedAPIIter code filters out these bogus duplicates by default.
@@ -1311,17 +1315,18 @@ class _Numerous_ChunkedAPIIter:
     # multiple chunks. The chunk size is 100 and the most duplicates I've been
     # able to artificially manufacture with test cases is 4. The server simply
     # can't process that many "simultaneous" updates on the writing side (where
-    # the condition for the duplicates appearing in the result stream gets created).
+    # the condition for the duplicates in the result stream gets created).
     #
-    # Because event streams certainly CAN (and DO) grow to be quite large, I was
-    # concerned about the overall O[] cost of this filtering. Therefore, the code
-    # only keeps track of the "previous" and "current" IDs based on chunk boundaries.
-    # This puts an upper bound on the cost of the algorithm for large event
-    # streams - the cost tops out based on the chunk size not the total stream size.
-    # As long as there are never more than 100 adjacent duplicates in a chunk
-    # this works (reiterating: never seen more than 4, and server performance is
-    # a pragmatic limit). There is no doubt this still slows things down but really
-    # it's hard to imagine that it matters much in python applications.
+    # Because event streams certainly CAN (and DO) grow to be quite
+    # large, I was concerned about the overall O[] cost of this filtering.
+    # Therefore, the code only keeps track of the "previous" and "current"
+    # IDs based on chunk boundaries. This puts an upper bound on the cost
+    # of the algorithm for large event streams - the cost tops out based
+    # on the chunk size not the total stream size. As long as there are
+    # never more than 100 adjacent duplicates in a chunk this works
+    # (reiterating: never seen more than 4, and server performance is
+    # a pragmatic limit). There is no doubt this still slows things down
+    # but really it's hard to imagine that it matters much.
     #
     # The flag for turning off duplicate filtering is really meant for testing.
     #
@@ -1332,11 +1337,11 @@ class _Numerous_ChunkedAPIIter:
     def __next__(self):
         r = self.__getNextOne()
 
-        # This "while" is misleading - it's really "if __dupfilter then while true"
+        # "while" is misleading - it's really "if __dupfilter then while true"
         while self.__dupfilter:
             thisId = r[self.__apiOP['dupFilter']]
             if thisId not in self.__dupfilter['prev']:
-                self.__dupfilter['current'][ thisId ] = 1  # only the key matters
+                self.__dupfilter['current'][ thisId ] = 1  # only key matters
                 break
             self.nr.statistics['duplicatesFiltered'] += 1
             r = self.__getNextOne()     # try the next one
@@ -1389,7 +1394,7 @@ class _Numerous_ChunkedAPIIter:
                 # and you might have no idea what that means when in reality
                 # it meant your metric was bad)
                 if self.__firstTime:
-                    if v.code == requests.codes.bad_request:   # bad metric id fmt
+                    if v.code == requests.codes.bad_request:
                         raise NumerousError(v, v.code, "Bad Metric")
                     else:
                         raise NumerousError(v, v.code, "Getting first item(s)")
@@ -1425,6 +1430,7 @@ class _Numerous_ChunkedAPIIter:
 #
 #    NumerousMetricConflictError
 #       - you attempted an onlyIf metric write and the value was no change
+#         Also raised for some metricByLabel duplicate match situations.
 #
 #    NumerousChunkingError
 #       - something went wrong while fetching the next chunk in
@@ -1437,11 +1443,12 @@ class _Numerous_ChunkedAPIIter:
 #
 #    NumerousNetworkError
 #       - there was a "somewhat normal" network error. The library catches the
-#         lower level (requests.execptions) errors that you might get if the network
-#         is down, connection times out, that sort of thing, and translates them
-#         into this error (so you can catch it without being exposed to the complexity
-#         that is all this lower-level gobbledygook). In this case the
-#         details attribute will contain the underlying exception info.
+#         lower level (requests.execptions) errors that you might get if
+#         the network is down, connection times out, that sort of thing, and
+#         translates them into this error (so you can catch it without
+#         being exposed to the complexity that is all this lower-level
+#         gobbledygook). In this case the details attribute will contain
+#         the underlying exception info.
 #
 
 class NumerousError(Exception):
@@ -1530,7 +1537,7 @@ def numerousKey(s=None, credsAPIKey='NumerousAPIKey'):
             except:
                 return None
 
-        except TypeError:      # it wasn't stringy, presumably it's a "readable"
+        except TypeError:      # wasn't stringy, presumably it's a "readable"
             pass
 
     # well, see if whatever it is, is readable, and go with that if it is
