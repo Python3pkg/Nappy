@@ -247,7 +247,7 @@ add() {
 }
 
 # report how much API quota is available, for infotainment purposes.
-# Note that we turn off the Numerous class API throttling so we can 
+# Note that we turn off the Numerous class API throttling so we can
 # query the server (make one API call) and get a result without ourselves
 # being subject to rate throttling...
 
@@ -530,6 +530,11 @@ except numerous.NumerousError as x:
   exit(0)
 "
 verifyPython " .. id: {'id' : 'something bogus'}" "NumerousError 400" "$TPGM"
+
+# try the default constructor
+TPGM="import numerous; numerous.NumerousMetric($DQ$METRIC$DQ).write(123456)"
+verifyPython " .. direct NumerousMetric constructor" "" "$TPGM"
+verifyNR 123456 "expected 123456" $METRIC
 
 # write a value
 verifyNR $$ "wrong write result" -w $METRIC $$
@@ -847,13 +852,10 @@ PhotoURL="$RESULT"
 
 infomsg "the photoURL is: $PhotoURL"
 
-# at one point the Numerous server photo function was broken and that
-# caused the URL being None here even though it should be something else.
-# We check for that... may as well
 if [ "x$PhotoURL" = "xNone" ]
 then
-  failout CONTINUE "Bad photo URL ... photo test skipped"
-  EXITSTATUS=1
+  # this should never happen
+  failout "Bad photo URL ... got None"
 else
   # get the photo... we use python/requests because we know we have them
   # vs some platforms having curl and some wget etc. We don't need to test
@@ -868,9 +870,6 @@ f.close()
 "
 
   $PYTHON -c "$READPGM"
-
-  # above replaces this:
-  #curl --silent `cat $TMPFILE` > $GIFFILE2
 
   # compare the photo with what we had set it to be
   cmp -l $GIFFILE $GIFFILE2

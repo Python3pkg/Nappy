@@ -319,7 +319,7 @@ parser.add_argument('-U', '--user', action="store_true")
 parser.add_argument('--statistics', action="store_true")  # info/debugging support
 parser.add_argument('--retry500', action="store_true")    # retry 500/504 errors
 parser.add_argument('-R', '--ratelimits', action="count", default=0)
-parser.add_argument('--ensurerate', type=int)             # use with -R
+parser.add_argument('--ensurerate', type=int, default=0)             # use with -R
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
 wgx.add_argument('-E', '--event', action="store_true")
@@ -465,7 +465,12 @@ if args.key:
 # if we've been asked to report on rate limits then just do that first
 # and there is no throttling (because we don't want to be throttled while
 # reporting about throttling lol)
-if args.ratelimits > 0:
+#
+# Note that if you just gave us an ensure we'll do that silently before doing
+# the rest of the requests you have specified
+#
+if args.ratelimits > 0 or args.ensurerate > 0:
+    bequiet = args.quiet or (args.ratelimits == 0)
     remain = -1
     refresh = -1
     nrRaw = nrServer = Numerous(apiKey=k, throttle=lambda nr,tp,td,up: False)
@@ -476,6 +481,7 @@ if args.ratelimits > 0:
     except NumerousError as x:
         if x.code == 429:       # we are in the Too Many condition already
             remain = 0          # report that as zero
+            refresh = nrRaw.statistics['rate-reset']
         elif x.code == 401:     # make a nice error output with unauthorized
             print("Server says: {}. Check -c or NUMEROUSAPIKEY environment.".format(x.reason))
             exit(1)
@@ -491,32 +497,31 @@ if args.ratelimits > 0:
         else:
             msg = "Delaying {} seconds; only have {} APIs left.".format(t, remain)
 
-        if not args.quiet:
+        if not bequiet:
             print(msg)
 
         if t > 0:
             time.sleep(t)
 
-    elif not args.quiet:
+    elif not bequiet:
         print("Remaining APIs: {}. New allocation in {} seconds.".format(remain,refresh))
 
     if args.ratelimits > 1:   # XXX haha, as a hack -RR means just do this then exit
         exit(0)
 
 # this throttle function implements retries on HTTP errors 500/504
-# It's not usually specified; but can be useful during debugging
+# It's not usually specified; but can be useful if the server is being buggy
+# NOTE: We only retry "guaranteed idempotent" requests which are GETs.
+#       There are some idempotent requests that are still not retried this way.
+#       C'est la vie. The server isn't really supposed to return 500/504 :)
+#
 def throttleRetryServerErrors(nr, tp, td, up):
-    if tp['result-code'] in (500, 504):
+    if tp['result-code'] in (500, 504) and tp['request']['http-method'] == 'GET':
         nr.statistics['throttleRetryServerErrors'] += 1
-        # The server failed -- usually because of high load.
-        # Delay an arbitrary amount of time and try again.
-        # XXX we don't know for certain that a retry won't
-        #     end up duplicating the API call.
-        time.sleep(45)     # arbitrary; might be better keyed off attempt number
-        return True        # and do a retry
-    # all other cases let the built-in policy handle it
-    else:
-        return up[0](nr, tp, up[1], up[2])
+        tp['result-code'] = 429     # make this look like a Too Many
+        tp['rate-reset'] = 15       # wait at least 15s, possibly more w/backoff
+    return up[0](nr, tp, up[1], up[2])
+
 
 tf = None
 if args.retry500:
@@ -722,9 +727,6 @@ def doPhotoWrite(metricOrNR, imageFName):
     except IOError:
         return "cannot open: " + imageFName
 
-    imageBytes = f.read()
-    f.close()
-
     mimeGuess = [ ( '.jpg', 'image/jpeg' ),
                   ( '.jpeg', 'image/jpeg' ),
                   ( 'gif', 'image/gif' ),
@@ -740,10 +742,10 @@ def doPhotoWrite(metricOrNR, imageFName):
     if not mType:
         mType = 'image/jpeg'    # hope for the best
 
-    if isinstance(metricOrNR, Numerous):
-        return metricOrNR.userPhoto(imageBytes, mType)
-    else:
-        return metricOrNR.photo(imageBytes, mType)
+    try:
+        return metricOrNR.userPhoto(f, mType)
+    except AttributeError:
+        return metricOrNR.photo(f, mType)
 
 
 
@@ -950,7 +952,7 @@ def mainCommandProcessing(nr, args):
                     #       (server will ignore any 'value' in the json)
                     # We don't implement any naked shortcut; val MUST be JSON
                     if '__naked__' in jval:
-                        r['result'] = "Update requires JSON for paramters"
+                        r['result'] = "Update requires JSON for parameters"
                         exitStatus = 1
                     else:
                         r['result'] = metric.update(jval)
@@ -1095,7 +1097,7 @@ def mainCommandProcessing(nr, args):
 
 
     if args.statistics:
-        print("Statistics:")
+        print("Statistics for {}:".format(nr))
         for k in nr.statistics:
             print("{:>24s}: {}".format(k, nr.statistics[k]))
         
