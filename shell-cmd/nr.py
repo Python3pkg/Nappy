@@ -585,9 +585,9 @@ def valueParser(s):
 
 
     # is it the EPOCHTIME: syntax?
-    EpochTimeSyntax = "EPOCHTIME: "
+    EpochTimeSyntax = "EPOCHTIME:"
     if s.startswith(EpochTimeSyntax):
-        sx = s[len(EpochTimeSyntax):]    # the rest of s
+        sx = s[len(EpochTimeSyntax):].lstrip(' ')    # the rest of s
 
         # these are all the formats we'll try for converting a date stamp
         # personally I don't recommend you use the ones omitting the full
@@ -966,6 +966,9 @@ def mainCommandProcessing(nr, args):
                             jval['value'] = 0    # this is implied by API anyway
                         else:
                             jval['value'] = vp
+                    elif 'value' in jval:
+                        # allow for EPOCHTIME: in value here
+                        jval['value'] = valueParser(jval['value'])
 
                     metric = nr.createMetric(r['ID'], attrs=jval)
                     if args.json:
