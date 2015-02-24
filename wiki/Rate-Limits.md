@@ -157,11 +157,10 @@ nr = Numerous(throttle = throttleNoVoluntary)
 When subjected to unusually heavy loads the NumerousApp server will sometimes return an HTTP 504 "Gateway Timeout" error. It may also return a more generic HTTP 500 "Server Error" error.
 
 >The NumerousApp support staff confirms that although the server is hosted on a service 
->that scales with increasing demand load, there are still some preset limits on the
->range of acceptable loads. You might think of this as "sanity check" the scaling service
->enforces in case something crazy causes a request storm at the server. This does mean, however,
->that sometimes unexpectedly-large or sudden increases in demand cause a temporary provisioning
->problem that leads to these server errors
+>that scales with increasing demand load, they have preset limits on the
+>range of acceptable loads in case something crazy causes a request storm at the server. 
+>Thus, sometimes unexpectedly-large or sudden increases in demand can cause a temporary
+>provisioning problem that leads to server errors 500 or 504.
 
 It is likely, but by no means semantically guaranteed, that such server errors imply that the API operation was never completed and that it might be appropriate to delay for some period of time and try again. This can be implemented in a throttle function as shown here:
 
@@ -193,4 +192,21 @@ has the same net effect as just a single call `m.write(17)` would. Such an API c
 * Setting a comment or an error on a metric. Duplicating the API call will result in duplicated comments or errors visible in the metric's stream. It's not clear whether likes are counted (which would be non-idempotent) or just a zero/non-zero thing (which would be idempotent).
 * Creating a metric.
 
-Conceptually we could expand the logic in the throttle function to look at the request details and only do a retry on the idempotent requests. That is left as an exercise for someone else (it's not entirely trivial but you'd have to parse the request URL enough to understand which operation was being requested; perhaps it wouldn't be unreasonable to extend the APIInfo table with an idempotent flag and supply this to the throttle policy). In practice if all you are doing is reading/writing a metric and you really want the operation to succeed even in the face of HTTP 500/504 "server overloaded" errors you could use the above throttle to provide that for you.
+In practice if all you are doing is reading/writing a metric and you really want the operation to succeed even in the face of HTTP 500/504 "server overloaded" errors you could use the above throttle to provide that for you. However we could expand the logic in the throttle function to look at the request details and only do a retry on the idempotent requests. One easy way to get very close to that is to only do 500/504 retries if the underlying request type was a GET. All HTTP (REST) GET requests are (supposed to be) idempotent, so we can make a throttle policy that would retry those only:
+
+```
+def throttleRetrySafeServerErrors(nr, tp, td, up):
+    if tp['result-code'] in (500, 504) and tp['request']['http-method'] == 'GET':
+        tp['result-code'] = 429     # make this look like a Too Many                    
+        tp['rate-reset'] = 15       # wait at least 15s, possibly more w/backoff        
+    return up[0](nr, tp, up[1], up[2])
+```
+
+In this case we are converting 500/504 errors into 429 errors but only doing that when the underlying HTTP request verb was GET. Then (whether converted or not) we pass the processing on to the system default throttle, which will implement a delay/retry for the 429 errors (whether "original" or "converted") and allow the unconverted 500/504 errors to fall through and fail out to the caller. One subtle point is that if there's a 500/504 error it is unlikely there is a valid rate-reset time (it will be -1) so we fake a 15second one. The backoff code in the system throttle might also add additional delay onto that anyway.
+
+By only retrying 500/504 errors on GETs we have made the policy "safe", at the expense of still not retrying a few cases that might have been ok to retry.
+
+>As an aside, not enough information is provided to the throttle routine to distinguish a metric "absolute write"
+>from a metric "add" or a metric "onlyIfChanged" operation. The json parameters of the request aren't passed along
+>into the throttle; perhaps they should be.
+

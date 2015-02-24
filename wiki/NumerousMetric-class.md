@@ -12,6 +12,16 @@ would set up m as a NumerousMetric with metric ID '123123123'.
 
 See the `metric` method in class `Numerous` for a more complete discussion of allowable types of metric IDs.
 
+As a shorthand, although it is not normally recommended, you can even skip creating the Numerous object and just do this:
+
+    m = numerous.NumerousMetric('123123123')
+
+which will work as long as you have set up your NUMEROUSAPIKEY environment variable. The `NumerousMetric` constructor will call `numerous.Numerous()` for you in this case. So it's a nice short way to create a metric when all you need to do is some sort of one liner like:
+
+    numerous.NumerousMetric('123123123').write(99)
+
+to just update metric '123123123' to the value 99. Note, however, that each metric you instantiate this way gets its own brand new Numerous() object. Not recommended unless you really are just doing a one-shot update.
+
 ## Public Attributes
 * `id` - the metric ID (string form)
 * `nr` - the Numerous() object used to talk to the server.

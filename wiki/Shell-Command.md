@@ -24,9 +24,24 @@ The underlying NumerousApp API always accesses metrics by a unique identifier wh
     % nr -n bozo
     17
 
-If there is more than one metric with a label of 'bozo' in your metrics then this will read one of them, and there is no good way of predicting which one it will be. Caveat User.
+The `-n` option requires that the label match exactly. It uses the `metricByLabel` option `'STRING'` and it will report an error if there is more than one matching metric. Thus:
 
-As a convenient way to get a translation of metric names (labels) into IDs, specifying -n by itself will list all of your metrics and their corresponding labels:
+    % nr -wM +duplicatedBozo 0      # creates a metric
+    % nr -wM +duplicatedBozo 0      # creates a metric
+    % nr -n duplicatedBozo          # will match both metrics
+
+will output:
+
+    More than one match:  ['duplicatedBozo', 'duplicatedBozo']
+    ERROR / Invalid Metric: duplicatedBozo    
+
+The `-N` (capital n) option uses the `metricByLabel` option `'ONE'` so in this case the supplied label name is treated as an _unanchored_ regexp. Note that this means it matches if the supplied argument appears anywhere in any label. Thus:
+
+    % nr -N e
+
+will match any label of any metric of yours that happens to have the letter 'e' in it (and will most likely fail with a duplicate-match error of course).
+
+As a convenient way to get a translation of metric names (labels) into IDs, specifying -n (or -N) by itself will list all of your metrics and their corresponding labels:
 
     % nr -n
     579875221157343692 bozo
@@ -190,6 +205,14 @@ or even write the same metric twice. This, for example, is a test of the `-y` op
     1
     NoChange
 
+### Writing Unix Epoch Times
+If your metric is a timer you can write a date/time to it using this syntax:
+
+    % nr -wn someTimer "EPOCHTIME: 02/23/2015 15:23:31"
+    1424726611.0
+
+The syntax is the string "EPOCHTIME: " followed by `mm/dd/yyyy hh:mm:ss` which will be converted into a seconds-since-time-zero Unix timestamp as required by the Numerous server. You can use this syntax to write any metric whether it is a timer or not; the date is converted into a floating point number as shown.
+
 ### Updating metric attributes
 To update the attributes of a metric we use the -M option combined with -w. In general every `nr` operation that writes something requires the `-w` flag, so think of the `-M` flag in this case as specifying "what to write" while the `-w` flag is simply specifying that we are going to write _something_.
 
@@ -236,6 +259,12 @@ So, for example:
     822646564275439228
 
 It is not possible to specify an initial value and `private` at the same time using these shorthands; you must give a JSON attribute dictionary in that case.
+
+You can create any type of metric but you will have to use the JSON attributes format. So, for example, you can create a timer metric this way:
+
+    % nr -wM +newTimer '{ "kind":"timer", "value":"EPOCHTIME: 02/19/1999 11:05:53" }'
+
+The `"value"` field in the attributes for metric creation and the value in a plain write command are the only two places the EPOCHTIME syntax is accepted for translating a date string into a number.
 
 ### Deleting a metric
 You delete metrics using the `--killmetric` option. There is no single-letter option variant for this operation. Also the operation *requires* a metric ID and will not work with `-n` -- this is on purpose to protect you against the potential ambiguity inherent in metric labels.
@@ -316,6 +345,58 @@ If you need the API Key extracted via `numerousKey()` you use `-k`:
     nmrs_X587wFqs8z9v
 
 No other arguments/commands are processed.
+
+### Getting Rate-Limiting Information
+If you are curious about your rate-limit usage the `-R` flag will add it to your output:
+
+    % nr -R -n bozo
+    Remaining APIs: 299. New allocation in 20 seconds.
+    17
+
+Note that this continues to execute other nr commands (in this case reading `bozo` and reporting its value of 17).
+
+For testing purposes it is sometimes helpful to know you have a certain amount of API allocation remaining before hitting any limits; you can use the `--ensure` flag for this:
+
+    % nr -R --ensure 200 -n bozo
+    No delay needed; have 293 operations left.
+    17
+
+Had your current API allocation been lower than 200 you might have seen:
+
+    Delaying 27 seconds; only have 187 APIs left.
+    17
+
+If you have no other `nr` operations and just want the report or the `--ensure` action by themselves, use `-RR`:
+
+    % nr -RR
+    Remaining APIs: 293. New allocation in 47 seconds.
+
+or
+
+    % nr -RR --ensure 200
+    No delay needed; have 247 operations left.
+
+### Displaying Statistics
+The `--statistics` option will display additional internal statistics:
+
+    % nr -n --statistics
+    579875221157343692 bozo
+    2141579335528632068 A Random Number
+    9208972516053673667 Crude Oil
+    Statistics for <Numerous {api.numerousapp.com} @ 0x1010175c0>:
+       additional-chunks: 1
+          serverRequests: 3
+          rate-remaining: 297
+            first-chunks: 1
+     serverResponseTimes: [0.285916, 0.288592, 0.27704, 0, 0, 0, 0, 0, 0, 0]
+               simpleAPI: 3
+              rate-reset: 50
+
+The `serverResponseTimes` reports the last ten server on-the-wire delays in seconds (the most recent time is the first one in the list). In the above example only three requests were made so only the first three entries are non-zero and they show that over-the-wire time is taking about 280 milliseconds. This is measured from the time the library calls the underlying HTTP (`requests.request`) method to the time the results are returned.
+
+The `serverRequests` value is the number of actual HTTP interactions sent to the server.
+
+See the source code in `numerous.py` to understand what the rest of these mean. In particular the `--statistics` option is most useful for determining whether or not the throttle code has been called.
 
 ### More
 Still not yet documented; read the shell script source: photos, users, subscriptions, stream...
