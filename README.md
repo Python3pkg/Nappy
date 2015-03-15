@@ -2,6 +2,8 @@
 
 A python class implementing the [NumerousApp](http://www.numerousapp.com) [APIs](http://docs.numerous.apiary.io).
 
+Available on pip: `pip install numerous`
+
 ```
 nr = numerous.Numerous()
 metric = nr.metricByLabel('SomeMetricOfYours')
