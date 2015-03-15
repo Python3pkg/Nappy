@@ -61,7 +61,7 @@ Of course if you have more complex requirements you can just get the key on your
 
 The numerousKey() function will get its data (the naked key or the JSON) from any of these sources, specified via the argument as described:
 
-* **k = numerousKey(None)** - the environment variable NUMEROUSAPIKEY will be used. If it doesn't exist then the function returns None (which will likely eventually lead to an authentication exception). If NUMEROUSAPIKEY does exist, then its content string is used as if it had been supplied as the argument to numerousKey (and so it can be any of the remaining forms, albeit NUMEROUSAPIKEY="@-" would be a bit odd, but all other forms are useful).
+* **k = numerousKey(None)** - the environment variable NUMEROUSAPIKEY will be used. If it doesn't exist then the function returns None (which will likely eventually lead to an authentication exception). If NUMEROUSAPIKEY does exist, then its content string is used as if it had been supplied as the argument to numerousKey (and so it can be any of the remaining forms).
 
 Whether the source argument was supplied as an actual argument or came from NUMEROUSAPIKEY in the environment, it is then treated according to what it looks like:
 
