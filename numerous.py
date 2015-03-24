@@ -1144,7 +1144,8 @@ class Numerous:
                                         data=data,
                                         files=multipart,
                                         headers=hdrs)
-            except requests.exceptions.RequestException as x:
+            except (requests.exceptions.RequestException,
+                    requests.exceptions.ConnectionError) as x:
                 raise NumerousNetworkError(x)
 
             # record elapsed round trip time, possibly in an array
