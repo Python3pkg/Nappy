@@ -861,17 +861,51 @@ else
   # vs some platforms having curl and some wget etc. We don't need to test
   # for errors here because ultimately they will be caught by the cmp check
 
-  READPGM="import requests
-r = requests.get(\"`cat $TMPFILE`\")
+  READPGM="import requests, sys
+r = requests.get(sys.stdin.read().strip('\n'))
 f = open(\"$GIFFILE2\", \"wb\")
 bytes = r.content
 f.write(bytes)
 f.close()
 "
+  echo $PhotoURL | $PYTHON -c "$READPGM"
 
-  $PYTHON -c "$READPGM"
+  # ok now here's the goofy part... the NumerousApp server alters stored
+  # images; not sure if that's for compression, or tile size, or both, or
+  # whatever. In any case, we can't read back the image at this point and
+  # expect it to compare -- it won't (it used to; now it doesn't).
+  #
+  # It turns out that what we CAN do, however, is readback the modified
+  # image, then write THAT, then read THAT back again. In that case it
+  # comes back unchanged. Obviously this "test" is implementation specific
+  # and somewhat tenuous/fragile at this point. So be it. It might be best
+  # in the long run to just not try to test data integrity for photo uploads.
+  # You know whether it works when you see your results with your eyes...
+  #
+  mv $GIFFILE2 $GIFFILE       # make the file that we just read the "source"
 
-  # compare the photo with what we had set it to be
+  # this delete isnt necessary but makes us feel better that
+  # we're actually testing a write/read-back operation now for sure
+  doNR --delete -Pq $METRIC
+
+  # now write the modified (by NumerousApp server) test GIF
+  doNR -wPq $METRIC $GIFFILE
+
+  # ... and read THAT one back
+  doNR -P $METRIC
+  PhotoURL="$RESULT"
+
+  infomsg "the second-pass photoURL is: $PhotoURL"
+
+  if [ "x$PhotoURL" = "xNone" ]
+  then
+    # this should never happen
+    failout "Bad photo URL ... got None"
+  else
+    echo $PhotoURL | $PYTHON -c "$READPGM"
+  fi
+
+  # finally -- compare the photo with what we had set it to be
   cmp -l $GIFFILE $GIFFILE2
   if [ $? != 0 ]
   then
@@ -1050,5 +1084,4 @@ done
 doNR -q --killmetric $DELETE_THESE
 
 rm -f $TMPFILE
-rm -f $GIFFILE
 exit $EXITSTATUS
