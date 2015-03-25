@@ -1,19 +1,29 @@
 <h1>Exceptions</h1>
-<p>Four specific exceptions are defined:</p>
+<p>The following exceptions are defined:</p>
 <ul>
 <li>NumerousError. The generic Exception subclass for NumerousAPI errors.</li>
 <li>NumerousMetricConflictError. Subclass of NumerousError. See NumerousMetric.write()</li>
 <li>NumerousAuthError. Subclass of NumerousError. For API key problems.</li>
+<li>NumerousNetworkError. Subclass of NumerousError. For networking failures returned by the underlying <code>requests</code> class.</li>
 <li>NumerousChunkingError. Subclass of NumerousError. Used for some types of iterator errors.</li>
 </ul>
 <h2>NumerousError</h2>
 <p>The <code>NumerousError</code> exception is the general purpose exception raised by the Numerous and NumerousMetric classes when the server reports an HTTP error code or when communication fails. If <code>e</code> is a NumerousError, then:
- * <code>e.code</code> will be an HTTP error code returned by the server or by the HTTP library.
- * <code>e.reason</code> will be a text string "reason" typically matching up with <code>e.code</code>
- * <code>e.details</code> will be a dictionary containing full-details of the error; the keys in this dictionary vary depending on the error and should probably not be used except as informational/debugging information.</p>
+<ul>
+<li><code>e.code</code> will be an HTTP error code returned by the server or by the HTTP library.
+<li><code>e.reason</code> will be a text string "reason" typically matching up with <code>e.code</code>
+<li><code>e.details</code> will be a dictionary containing full-details of the error; the keys in this dictionary vary depending on the error and should probably not be used except as informational/debugging information.
+</ul>
 <h2>NumerousMetricConflictError</h2>
 <p>Subclass of <code>NumerourError</code>. Raised when you perform a metric <code>write()</code> with <code>onlyIfChanged=True</code> and the value isn't a change. See metric <code>write()</code> for more details. This exception is also thrown by <code>metricByLabel</code> in some multiple-match cases.</p>
 <h2>NumerousAuthError</h2>
 <p>Subclass of <code>NumerousError</code>. Raised whenever the NumerousApp server returns an HTTP 401 code. Usually means your API Key is no good (or has become no good).</p>
+<h2>NumerousNetworkError</h2> 
+Subclass of <code>NumerousError</code>. Raised
+whenever interacting with the NumerousApp server caused a
+networking-related exception from the requests library. Typically this
+means the server (or your network) is down. The attributes contain the
+original exception; there's not much (useful) you can do with this
+other than print it out.
 <h2>NumerousChunkingError</h2>
 <p>Subclass of <code>NumerousError</code>. Raised from any iterator method when an unexpected server error occurs while fetching any chunk of results other than the first chunk. This error is never "expected" but it can happen if the server returns an error while we are fetching the second or subsequent "chunk" of any type of collection. Essentially this is communicating an iteration that has been interrupted by some server or network error and is therefore incomplete. Note that this is never raised if the <em>first</em> chunk fetch fails (that will raise a NumerousError or possibly a NumerousAuthError) as that indicates bad parameters for the iterator, whereas a failure partway through the chunking protocol indicates some other type of (possibly severe, definitely unexpected) problem.</p>

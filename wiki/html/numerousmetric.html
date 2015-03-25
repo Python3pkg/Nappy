@@ -8,6 +8,16 @@ m = NumerousMetric('123123123', nr)   # equivalent to m = nr.metric('123123123')
 </code></pre>
 <p>would set up m as a NumerousMetric with metric ID '123123123'. </p>
 <p>See the <code>metric</code> method in class <code>Numerous</code> for a more complete discussion of allowable types of metric IDs.</p>
+<p>
+As a shorthand, although it is not normally recommended, you can even skip creating the Numerous object and just do this:
+<pre><code>m = numerous.NumerousMetric('123123123')</code></pre>
+<br>which will work as long as you have set up your NUMEROUSAPIKEY
+environment variable. The <code>NumerousMetric</code> constructor will call
+<code>numerous.Numerous()</code> for you in this case. So it's a nice short way to
+create a metric when all you need to do is some sort of one liner
+like:
+<pre><code>numerous.NumerousMetric('123123123').write(99)</code></pre>
+<br>to just update metric '123123123' to the value 99. Note, however, that each metric you instantiate this way gets its own brand new Numerous() object. Not recommended unless you really are just doing a one-shot update.
 <h2>Public Attributes</h2>
 <ul>
 <li><code>id</code> - the metric ID (string form)</li>
@@ -51,6 +61,7 @@ m.read()
 <li>interactionDelete</li>
 <li>label</li>
 <li>webURL</li>
+<li>appURL</li>
 <li>photoURL</li>
 <li>crushKillDestroy</li>
 </ul>
@@ -274,15 +285,19 @@ mdict = m.photo(photoData, mimeType="image/gif")
 <pre><code>print("The metric label is {}".format(m.label()))
 </code></pre>
 <p>Convenience function. Returns the metric label. Exactly equivalent to:</p>
-<pre><code>m.read(dictionary=True)['label']
+<pre><code>m['label']
 </code></pre>
 <h3>webURL()</h3>
 <p>Example usage:</p>
 <pre><code>print("You could surf this metric with your browser here: {}".format(m.webURL()))
 </code></pre>
 <p>Convenience function. Returns the URL that can be used to access the metric value via a browser. Exactly equivalent to:</p>
-<pre><code>m.read(dictionary=True)['links']['web']
+<pre><code>m['links']['web']
 </code></pre>
+<h3>appURL()</h3>
+Example usage:
+<pre><code>print("Open this metric in the Numerous App: {}".format(m.appURL()))</code></pre>
+<p>Creates a URL that, if accessed on a mobile device or any other system with the Numerous App installed, will launch the application to view the metric. The URL uses the nmrs:// scheme and will typically not open in a regular browser.
 <h3>photoURL()</h3>
 <p>Example usage:</p>
 <pre><code>print("Here is the storage for the metric photo: {}".format(m.photoURL()))

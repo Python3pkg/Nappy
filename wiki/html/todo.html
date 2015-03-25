@@ -1,5 +1,49 @@
 <h1>To Do</h1>
 <p>Things that still need to be done, or at least might be useful if done.</p>
+<h2>Performance</h2>
+<p>I instrumented the code to determine how much time is taken by all the
+dynamic construction for the APIInfo, _getAPI, _makeAPIContext, etc
+stuff. On my mac that contributes about 189 microseconds (i.e., less
+than 1 millisecond) of overhead. It's just not a factor versus the
+round-trip times to the NumerousApp server.
+<p>
+If you time the end-to-end calls you will be up in the 280 millisecond
+range with the bulk of this being actual on-the-wire time (i.e.,
+beyond our control). The <code>requests</code> library conveniently
+puts the on-the-wire elapsed time into the response object which the
+Numerous class makes available via the <code>statistics</code> (see
+below). Thus the maximum theoretical API rate is about 3 to 4 requests
+per second back and forth to the Numerous server from a single
+thread. You can definitely get more with multiple
+threads/processes. Your mileage may vary of course depending on
+network conditions.
+<p>
+By default the round-trip time (in floating point seconds) of the most
+recent API request is available in <code>nr.statistics['serverResponseTimes']</code>.
+<p>
+If you force that element to be an array then the code will keep the
+most recent N round-trip times (as determined by the size of the
+array). So, for example:
+<p>
+<pre>
+<code>
+    nr.statistics['serverResponseTimes'] = [0]*10
+</code>
+</pre>
+<br>
+will set things up so that the last 10 response times at the
+requests.request() call level are always available in
+'serverResponseTimes'. The most recent time will be the zero'th
+element in the array.
+<p>
+If you hand instrument the code and perform more experiments you will
+find there is 4-6 milliseconds of extra overhead buried somewhere in
+the <code>requests</code> module itself. I haven't been able to figure out what
+that is; I'm guessing it has to do with sockets being closed when
+objects go out of scope.
+<p>
+None of this is remotely significant in the face of 280msec on-the-wire time.
+
 <h2>Exception Wrap Subclass</h2>
 <p>By design the Numerous and NumerousMetric classes bubble up most errors as Exceptions and do not hide low-level errors some of which are a little silly. </p>
 <p>For example, deleting a metric photo when the metric has no photo causes a NumerousError exception, code 404. Arguably that error should be ignored. Along the same lines, deleting an interaction that doesn't exist causes a NumerousError exception with code 200 (OK). This is because the server returns code 204 (No Response) when an interaction is successfully deleted (so this is used as the "expected good response" code) and returns code 200 ("OK") when the specified interaction doesn't exist. This is understandable from a semantic invariant point of view - the interaction doesn't exist in either case after the call, so "OK" is a perfectly reasonable response. </p>
@@ -15,21 +59,3 @@
         return True
 </code></pre>
 <p>and so forth, overriding (wrapping) just those methods that raise exceptions and handling the "we don't really care" cases accordingly.</p>
-<h2>caching?</h2>
-<p>Wondering if it is worth creating a caching class that would allow you to do a bunch of things to a metric and then commit() the results. Seems like a lot of work for no good reason though. I've gone back and forth on this.</p>
-<h2>namespace vs dict</h2>
-<p>Similarly I've gone back and forth on whether it would be good to allow</p>
-<pre><code>m = nr.metric('123123123')
-print(m.description)
-</code></pre>
-<p>vs what you have to do now:</p>
-<pre><code>m = nr.metric('123123123')
-mdict = m.read(dictionary=True)
-print(mdict['description'])
-</code></pre>
-<p>a similar question exists for just letting you do:</p>
-<pre><code>m = nr.metric('123123123')
-print(m['label'])
-</code></pre>
-<p>My problem with both of these ideas is that the operation would involve talking to the server so it's a lot more expensive than "Just accessing an attribute" would seem to imply. Also it can throw exceptions of course so that's also an argument (I think) against making this that implicit unless maybe it is combined with the cache concept.</p>
-<p>Right now you solve all of those problems yourself by fetching the dictionary with <code>m.read(dictionary=True)</code> and just operating on the dictionary, and eventually putting it back accordingly (though you have to know whether you need to do <code>m.write</code> vs <code>m.update</code> or possibly both but that's how the NumerousApp API works).</p>

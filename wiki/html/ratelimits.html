@@ -35,7 +35,9 @@ took extra time.</p>
 <p>If you hit a 429 "Too Many Requests" limit the client will delay for some amount of time and retry the request. This is transparent to you, you do not see the 429 error you just experience a time delay before your API call completes.</p>
 </li>
 <li>
-<p>If you are "getting close" (defined arbitrarily inside the code) to the server-communicated limit (X-Rate-Limit-Remaining) then you will be delayed a short amount of time. The idea behind this "voluntary" restraint is that not all clients (i.e., other implementations) may know how to handle the 429/500 error codes, so if we are getting close we want to voluntarily slow ourselves down for a little while to try to avoid hitting the "too many" condition if possible. Another advantage of voluntary restraint is to spread a possibly long X-Rate-Limit-Reset time across multiple API calls. One way or another if you've made too many API calls too quickly you are going to have to wait for more rate allocation, but it will seem less onerous to wait a little bit extra across multiple API calls than to wait the entire delay time on just one. </p>
+<p>
+If you are "getting close" (defined arbitrarily inside the code) to the server-communicated limit (X-Rate-Limit-Remaining) then you will be delayed a short amount of time. The idea behind this "voluntary" restraint is that not all clients (i.e., other implementations) may know how to handle the 429 error code, so if we are getting close we want to voluntarily slow ourselves down for a little while to try to avoid hitting the "too many" condition if possible. Another advantage of voluntary restraint is to spread a possibly long X-Rate-Limit-Reset time across multiple API calls. One way or another if you've made too many API calls too quickly you are going to have to wait for more rate allocation, but it will seem less onerous to wait a little bit extra across multiple API calls than to wait the entire delay time on just one.</p>
+
 </li>
 </ul>
 <p>When deciding to delay, the amount of time to wait is computed using a combination of X-Rate-Limit-Reset info (what the server told us to wait to get a new allocation of capacity) and an added exponential backoff factor based on how many times we have retried this particular request. So, for example, if you get a 429 we will wait how long the server tells us to wait plus a small amount "to be sure" (e.g., 2 extra seconds). If after that retry the code experiences ANOTHER 429 (during the retry of this same request), it will again wait however long the server has (once again) told us to wait, but will add an even longer "just to be sure" backoff time on top of that. Eventually the request will either go through or the code will give up and allow the 429 error to bubble up to you as an exception.</p>
@@ -181,7 +183,7 @@ nr = Numerous(throttle=delayAuthFailure, apiKey='boguskey')
 nr.ping()   # will fail with an exception but also take an extra 10 seconds to do so
 
 </code></pre>
-
+<h2>Useful Custom Throttles</h2>
 <p>Given all this, it is still likely that the most useful custom throttle policy is the "no throttling" policy, which would implement no limits on API calls and simply allow the 429 ("Too Many Requests") errors from the server to bubble back up as NumerousError exceptions if they occur. Such a policy can be specified with this trivial lambda:</p>
 
 <pre><code>nr = Numerous(throttle = lambda nr,tp,td,up: False)
@@ -229,4 +231,33 @@ def throttleRetryServerErrors(nr, tp, td, up):
 <li>Setting a comment or an error on a metric. Duplicating the API call will result in duplicated comments or errors visible in the metric's stream. It's not clear whether likes are counted (which would be non-idempotent) or just a zero/non-zero thing (which would be idempotent).</li>
 <li>Creating a metric.</li>
 </ul>
-<p>Conceptually we could expand the logic in the throttle function to look at the request details and only do a retry on the idempotent requests. That is left as an exercise for someone else (it's not entirely trivial but you'd have to parse the request URL enough to understand which operation was being requested; perhaps it wouldn't be unreasonable to extend the APIInfo table with an idempotent flag and supply this to the throttle policy). In practice if all you are doing is reading/writing a metric and you really want the operation to succeed even in the face of HTTP 500/504 "server overloaded" errors you could use the above throttle to provide that for you.</p>
+<p>In practice if all you are doing is reading/writing a metric and
+you really want the operation to succeed even in the face of HTTP
+500/504 "server overloaded" errors you could use the above throttle to
+provide that for you. However we could expand the logic in the
+throttle function to look at the request details and only do a retry
+on the idempotent requests. One easy way to get very close to that is
+to only do 500/504 retries if the underlying request type was a
+GET. All HTTP (REST) GET requests are (supposed to be) idempotent, so
+we can make a throttle policy that would retry those only:
+<pre><code>
+def throttleRetrySafeServerErrors(nr, tp, td, up):
+    if tp['result-code'] in (500, 504) and tp['request']['http-method'] == 'GET':
+        tp['result-code'] = 429     # make this look like a Too Many                    
+        tp['rate-reset'] = 15       # wait at least 15s, possibly more w/backoff        
+    return up[0](nr, tp, up[1], up[2])
+</code></pre>
+<p>In this case we are converting 500/504 errors into 429 errors but
+only doing that when the underlying HTTP request verb was GET. Then
+(whether converted or not) we pass the processing on to the system
+default throttle, which will implement a delay/retry for the 429
+errors (whether "original" or "converted") and allow the unconverted
+500/504 errors to fall through and fail out to the caller. One subtle
+point is that if there's a 500/504 error it is unlikely there is a
+valid rate-reset time (it will be -1) so we fake a 15second one. The
+backoff code in the system throttle might also add additional delay
+onto that anyway.
+<p>
+By only retrying 500/504 errors on GETs we have made the policy "safe", at the expense of still not retrying a few cases that might have been ok to retry.
+<p><i>
+As an aside, not enough information is provided to the throttle routine to distinguish a metric "absolute write" from a metric "add" or a metric "onlyIfChanged" operation. The json parameters of the request aren't passed along into the throttle; perhaps they should be.</i>

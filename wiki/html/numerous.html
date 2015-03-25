@@ -12,15 +12,13 @@ nr = Numerous()
 <p>In addition to <code>apiKey</code> and <code>server</code> it is also possible to specify a custom rate-limiting/throttle policy. See <a href="ratelimits.html">Rate Limits</a> for details.</p>
 <h2>Public Attributes</h2>
 <ul>
-<li>serverName</li>
-<li>statistics</li>
+<li>
+<b><code>serverName</code></b> - informational only. The fully qualified domain name of the server. Changing this has no effect (you need to set it at constructor time).
+<li>
+<b><code>agentString</code></b> - the user agent string that gets sent to the server with every request. You can set this to whatever you want although there's no really good reason to change it. It has no effect at the server.
+<li>
+<b><code>statistics</code></b> - a dictionary containing counters and information about the internal workings of the class and might be useful to examine for testing or debugging. These are instantiated only as needed (so make at least one API call before examining this if you want to see what it contains).
 </ul>
-<p>Public attribute <code>serverName</code> informational only:</p>
-<pre><code>nr = Numerous()
-print("Using {} as the server".format(nr.serverName))
-</code></pre>
-<p>once you have instantiated a Numerous() setting <code>serverName</code> to anything else will NOT change the server being used.</p>
-<p>The <code>statistics</code> are counters and other information about the internal workings of the class and might be useful to examine for testing/debugging.</p>
 <h2>Methods</h2>
 <ul>
 <li>metric(metricId) - instantiate a NumerousMetric object.</li>
@@ -81,7 +79,7 @@ If the passed-in metricId looks like a URL then the tail end of that URL is take
 m = nr.metricByLabel('xyz')
 </code></pre>
 <p>This will look up your metrics (via the nr.metrics() iterator) and search for one with a label containing 'xyz' <em>anywhere within the label</em> (see below for how to control the matching rules). If a metric is found the corresponding NumerousMetric object is returned (else None).</p>
-<p>There are four <code>matchType</code> values you can specify and three of them (including the default) treat the <code>labelspec</code> as a generalized unanchored regular expression. For example:</p>
+<p>There are five <code>matchType</code> values you can specify and three of them (including the default) treat the <code>labelspec</code> as a generalized unanchored regular expression. For example:</p>
 <pre><code>m = nr.metricByLabel('a')
 </code></pre>
 <p>will match ANY metric that has an 'a' in its label. By default the <code>matchType</code> is 'FIRST' so the above call will return whatever metric happens to occur first (in an arbitrary server-defined order) and has the letter 'a' in its label, anywhere. </p>
@@ -92,7 +90,7 @@ m = nr.metricByLabel('xyz')
 <pre><code>m = nr.metricByLabel('a', matchType='STRING')
 </code></pre>
 <p>except that the 'STRING' variant will throw an exception if there are multiple matches (whereas the other variant returns an arbitrarily-defined first match)</p>
-<p>The four valid values for matchType are:</p>
+<p>The five valid values for matchType are:</p>
 <ul>
 <li>
 <p>matchType='FIRST' - the default. The <code>labelspec</code> is used as a python regular expression and a corresponding NumerousMetric() object is instantiated based on the first metric label that matches. There is no way to predict what match will be 'FIRST' if there are multiple metrics that match.</p>
@@ -106,9 +104,10 @@ m = nr.metricByLabel('xyz')
 <li>
 <p>matchType='STRING' - in this case <code>labelspec</code> is treated as an ordinary string and it must exactly match one metric label. In other words the matching criteria is the string comparison <code>str1 == str2</code> with no regexp interpretation. If it matches more than one metric label a <code>NumerousMetricConflictError</code> will be thrown.</p>
 </li>
+<p>matchType='ID' - <code>labelspec</code> is treated as a metric ID, not as a label at all. However, unlike calling <code>nr.metric()</code> directly, this method does ensure that the resulting metric is accessible. In other words, this calls <code>m.validate()</code> for you, and will return <code>None</code> rather than an invalid metric object.</li>
 </ul>
 <p>Please note that <code>matchType</code> values are all upper-case and are case-sensitive. Specifying <code>matchType='One'</code> for example will throw an exception.</p>
-<p>For any <code>matchType</code> except for 'STRING', the <code>labelspec</code> is a python regular expression interpreted using the <a href="https://docs.python.org/3/library/re.html#re.search"><code>search</code></a> method from the python <code>re</code> class. This means it will match any substring of the label unless you specifically anchor it with <code>^</code> (start of label) or <code>$</code> (end of label). Any regular expression syntax understood by <code>re.search</code> may be used in <code>labelspec</code>.</p>
+<p>For <code>matchType</code> 'FIRST', 'BEST', or 'ONE' the <code>labelspec</code> is a python regular expression interpreted using the <a href="https://docs.python.org/3/library/re.html#re.search"><code>search</code></a> method from the python <code>re</code> class. This means it will match any substring of the label unless you specifically anchor it with <code>^</code> (start of label) or <code>$</code> (end of label). Any regular expression syntax understood by <code>re.search</code> may be used in <code>labelspec</code>.</p>
 <p>In general, the <code>metricByLabel</code> method is mostly useful as a convenience when experimenting interactively in a python session. If used "for real" be aware that any <code>matchType</code> except for 'FIRST' requires iterating through the entire set of your metrics (metrics produced by the <code>nr.metrics</code> iterator). This requires at least one extra server API invocation and may require more if you have many metrics. Also there is no guarantee of label uniqueness; you can easily create two metrics with the same label. You may want to use the <code>matchType</code> 'ONE' to catch an ambiguous match.</p>
 <h3>createMetric(label, value=None, attrs={})</h3>
 <p>Example usage:</p>

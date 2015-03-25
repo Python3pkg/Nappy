@@ -1,6 +1,22 @@
 <h1>Determining Your API Key</h1>
 <p>You get your API key from your NumerousApp app on your phone/iPad/etc. Go to Settings, go into Developer Info, and there it is. Be careful with this; at this time Numerous provides no way to change your key so if you let other people have it that's game over for your account.</p>
 <p>HTTP Basic Authentication (using your API Key) is used (over https) as described in the NumerousApp API <a href="http://docs.numerous.apiary.io/#authentication">Authentication</a> documentation.</p>
+<h2>For the impatient</h2>
+Just do this at the shell:
+<pre><code>
+echo "yourAPIkeyHere" > ~/.numerousCred
+NUMEROUSAPIKEY=~/.numerousCred export NUMEROUSAPIKEY
+</code></pre>
+In other words, make a file with your "nmrs_blah3v9483blah" key in it and set environment variable NUMEROUSAPIKEY to point at that file.
+<p>
+Then use the default key management:
+<pre><code>
+from numerous import Numerous
+nr = Numerous()
+</code></pre>
+and you are ready to go. Numerous will pick up your key from the file named by the NUMEROUSAPIKEY environment variable.
+<p>
+The remainder of this page contains more details on ways to manage your key.
 <h2>numerousKey() convenience function</h2>
 <p>Once you have the API key you have to decide how to store it and how to provide it to the Numerous() constructor. A convenience function <code>numerousKey()</code> assists with this:</p>
 <pre><code>from numerous import numerousKey
@@ -63,6 +79,11 @@ set your environment variable NUMEROUSAPIKEY=~/.numerousCred
 nr = Numerous()
 </code></pre>
 <p>will instantiate a Numerous object using the apiKey found in the .numerousCred file as specified by the environment variable NUMEROUSAPIKEY. </p>
+<p>
+You could strip this all the way down to putting your key directly into the environment:
+<pre><code>% NUMEROUSAPIKEY=nmrs_blah2348v754blah python myprogram.py</code></pre>
+and still just use nr = Numerous(); however, doing so potentially exposes your key to anyone who can view process status on the machine (environment variables can be viewed) so this usually isn't a good idea on general principles.
+
 <p>Additional examples:</p>
 <pre><code># open file example
 from numerous import Numerous, numerousKey

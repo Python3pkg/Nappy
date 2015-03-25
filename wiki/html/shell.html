@@ -16,7 +16,40 @@
 <pre><code>% nr -n bozo
 17
 </code></pre>
-<p>If there is more than one metric with a label of 'bozo' in your metrics then this will read one of them, and there is no good way of predicting which one it will be. Caveat User.</p>
+<p>
+The -n option requires that the label match exactly. It uses the
+<code>metricByLabel</code> option <code>'STRING'</code> and it will
+report an error if there is more than one matching metric. Thus:
+<pre>
+<code>
+  % nr -wM +duplicatedBozo 0      # creates a metric
+  % nr -wM +duplicatedBozo 0      # creates a metric
+  % nr -n duplicatedBozo          # will match both metrics
+</code>
+</pre>
+<br>
+will output:
+<pre>
+<code>
+  More than one match:  ['duplicatedBozo', 'duplicatedBozo']
+  ERROR / Invalid Metric: duplicatedBozo    
+</code>
+</pre>
+<p>
+The <code>-N</code> (capital n) option uses the <code>metricByLabel</code>
+option <code>'ONE'</code> so in this case the supplied label name is
+treated as an unanchored regexp. Note that this means it matches if the
+supplied argument appears anywhere in any label. Thus:
+<pre>
+<code>
+  % nr -N e
+</code>
+</pre>
+<br>
+will match any label of any metric of yours that happens to have the
+letter 'e' in it (and will most likely fail with a duplicate-match
+error of course).
+
 <p>As a convenient way to get a translation of metric names (labels) into IDs, specifying -n by itself will list all of your metrics and their corresponding labels:</p>
 <pre><code>% nr -n
 579875221157343692 bozo
@@ -77,6 +110,7 @@ http://n.numerousapp.com/m/g9quiku9vuv8
 <pre><code>% nr -n -j bozo 'A Random Number'
 </code></pre>
 <p>in which case the top level list structure under "Results" will have two entries, and each entry will have a "result" (the actual result from the server) and an "ID" (the identifier that was used to obtain that result). Here is a (partially elided) pretty-print of the output of that command:
+<pre>
 <code>{
     "Results": [
         {
@@ -100,7 +134,7 @@ http://n.numerousapp.com/m/g9quiku9vuv8
             }
         }
     ]
-}</code>
+}</code></pre>
 As mentioned, for brevity the complete list of attributes has not been shown above; the actual command output includes all attributes for the given metrics.</p>
 <p>Each element of the Results array is a two-element dictionary, containing an "ID" (that was used to request the information) and a "result" (that came back from the server). </p>
 <p>The <code>-j</code> (or <code>--json</code>) option requests that the output be in JSON format. This generally works as a modification of almost any output request. For example to see your entire set of metrics in JSON form (one JSON object per line per metric):</p>
@@ -152,6 +186,22 @@ NoChange
 1
 NoChange
 </code></pre>
+<h3>Writing Unix Epoch Times</h3>
+<p>If your metric is a timer you can write a date/time to it using this syntax:
+<pre>
+<code>
+  % nr -wn someTimer "EPOCHTIME: 02/23/2015 15:23:31"
+  1424726611.0
+</code>
+</pre>
+<br>
+The syntax is the string "EPOCHTIME: " followed by
+<code>mm/dd/yyyy hh:mm:ss</code> which will be converted into a
+seconds-since-time-zero Unix timestamp as required by the Numerous
+server. You can use this syntax to write any metric whether it is a
+timer or not; the date is converted into a floating point number as
+shown.
+
 <h3>Updating metric attributes</h3>
 <p>To update the attributes of a metric we use the -M option combined with -w. In general every <code>nr</code> operation that writes something requires the <code>-w</code> flag, so think of the <code>-M</code> flag in this case as specifying "what to write" while the <code>-w</code> flag is simply specifying that we are going to write <em>something</em>.</p>
 <pre><code>% nr -wMn bozo '{ "description" : "has red hair" }'
@@ -188,6 +238,20 @@ NoChange
 822646564275439228
 </code></pre>
 <p>It is not possible to specify an initial value and <code>private</code> at the same time using these shorthands; you must give a JSON attribute dictionary in that case.</p>
+<p>
+You can create any type of metric but you will have to use the JSON
+attributes format. So, for example, you can create a timer metric this
+way:
+<pre>
+<code>
+  % nr -wM +newTimer '{ "kind":"timer", "value":"EPOCHTIME: 02/19/1999 11:05:53" }'
+</code>
+</pre>
+<p>
+The "value" field in the attributes for metric creation and the value
+in a plain write command are the only two places the EPOCHTIME syntax
+is accepted for translating a date string into a number.
+
 <h3>Deleting a metric</h3>
 <p>You delete metrics using the <code>--killmetric</code> option. There is no single-letter option variant for this operation. Also the operation <em>requires</em> a metric ID and will not work with <code>-n</code> -- this is on purpose to protect you against the potential ambiguity inherent in metric labels.</p>
 <pre><code>% nr -wM +newmetric private
@@ -250,5 +314,74 @@ like 6434586778323266772 None 2015-01-12T14:25:57.237Z 7180748783917522265 -- No
 nmrs_X587wFqs8z9v
 </code></pre>
 <p>No other arguments/commands are processed.</p>
+<h3>Getting Rate-Limiting Information</h3>
+<p>If you are curious about your rate-limit usage the -R flag will add it
+to your output:
+<pre><code>
+  % nr -R -n bozo
+  Remaining APIs: 299. New allocation in 20 seconds.
+  17
+</code></pre>
+<p>Note that this continues to execute other nr commands (in this case
+reading bozo and reporting its value of 17).
+<p>
+For testing purposes it is sometimes helpful to know you have a
+certain amount of API allocation remaining before hitting any limits;
+you can use the <code>--ensure</code> flag for this:
+<pre><code>
+  % nr -R --ensure 200 -n bozo
+  No delay needed; have 293 operations left.
+  17
+</code></pre>
+<p>
+Had your current API allocation been lower than 200 you might have seen:
+<pre><code>
+  Delaying 27 seconds; only have 187 APIs left.
+  17
+</code></pre>
+<p>
+If you have no other nr operations and just want the report or the <code>--ensure</code> action by themselves, use <code>-RR</code>:
+<pre><code>
+  % nr -RR
+  Remaining APIs: 293. New allocation in 47 seconds.
+</code></pre>
+<br>or
+<pre><code>
+  % nr -RR --ensure 200
+  No delay needed; have 247 operations left.
+  Displaying Statistics
+</code></pre>
+<h3>Displaying Statistics</h3>
+<p>
+The <code>--statistics</code> option will display additional internal statistics:
+<pre><code>
+  % nr -n --statistics
+  579875221157343692 bozo
+  2141579335528632068 A Random Number
+  9208972516053673667 Crude Oil
+  Statistics for <Numerous {api.numerousapp.com} @ 0x1010175c0>:
+     additional-chunks: 1
+        serverRequests: 3
+        rate-remaining: 297
+          first-chunks: 1
+   serverResponseTimes: [0.285916, 0.288592, 0.27704, 0, 0, 0, 0, 0, 0, 0]
+             simpleAPI: 3
+            rate-reset: 50
+</code></pre>
+<p>The <code>serverResponseTimes</code> reports the last ten server on-the-wire
+delays in seconds (the most recent time is the first one in the
+list). In the above example only three requests were made so only the
+first three entries are non-zero and they show that over-the-wire time
+is taking about 280 milliseconds. This is measured from the time the
+library calls the underlying HTTP (requests.request) method to the
+time the results are returned.
+<p>
+The <code>serverRequests</code> value is the number of actual HTTP interactions
+sent to the server.
+<p>
+See the source code in numerous.py to understand what the rest of
+these mean. In particular the --statistics option is most useful for
+determining whether or not the throttle code has been called.
+
 <h3>More</h3>
 <p>Still not yet documented; read the shell script source: photos, users, subscriptions, stream...</p>
