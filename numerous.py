@@ -59,7 +59,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150222-1.5.1xx"
+_NumerousClassVersionString = "20150324-1.5.2"
 
 #
 # metric object

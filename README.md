@@ -4,6 +4,8 @@ A python class implementing the [NumerousApp](http://www.numerousapp.com) [APIs]
 
 Available on pip: `pip install numerous`
 
+Example code:
+
 ```
 nr = numerous.Numerous()
 metric = nr.metricByLabel('SomeMetricOfYours')
@@ -15,6 +17,9 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 ## python versions
 
 Works on both python2 and python3.
+
+## New in version 1.5.2
+* catches more network exceptions from requests and converts them into NumerousNetworkError exceptions
 
 ## New in version 1.5.1
 * /v2 endpoint for metric PUT (update); allows updating new parameters including photoTreatment and graphingOptions.
