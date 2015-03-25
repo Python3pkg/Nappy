@@ -611,6 +611,20 @@ then
 fi
 infomsg "Succeeded"
 
+# before making an error entry turn off error notifications on the metric
+# There is no NR command for this; have to do with python directly
+# NOTE: also implicitly (and lightly) testing the subscription methods
+PPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+
+sb = { 'notifyOnError' : False }
+metric.subscribe(sb)
+"
+
+infomsg "Turning off notifyOnError via subscribe()"
+$PYTHON -c "$PPGM"
+
 # try making an error entry
 ErrString="This is the error info"
 ErrInfo="{ \"kind\": \"error\", \"commentBody\": \"$ErrString\" }"
