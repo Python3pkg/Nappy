@@ -844,7 +844,15 @@ fi
 infomsg "It is gone! (yay!)"
 
 # testing photos... first make a tiny GIF file (one pixel image)
-GIFDATA="\\x47\\x49\\x46\\x38\\x39\\x61\\x01\\x00\\x01\\x00\\x80\\x00\\x00\\xff\\xff\\xff\\x00\\x00\\x00\\x2c\\x00\\x00\\x00\\x00\\x01\\x00\\x01\\x00\\x00\\x02\\x02\\x44\\x01\\x00\\x3b"
+
+# this 35 byte GIF file might not be entirely legal; in any case
+# the Numerous server transforms it into a slightly longer file on
+# readback so we don't use it any more
+
+#GIFDATA="\\x47\\x49\\x46\\x38\\x39\\x61\\x01\\x00\\x01\\x00\\x80\\x00\\x00\\xff\\xff\\xff\\x00\\x00\\x00\\x2c\\x00\\x00\\x00\\x00\\x01\\x00\\x01\\x00\\x00\\x02\\x02\\x44\\x01\\x00\\x3b"
+
+# This 43 byte GIF file keeps the Numerous server happy
+GIFDATA="\\x47\\x49\\x46\\x38\\x39\\x61\\x01\\x00\\x01\\x00\\xf0\\x00\\x00\\xff\\xff\\xff\\x00\\x00\\x00\\x21\\xf9\\x04\\x00\\x00\\x00\\x00\\x00\\x2c\\x00\\x00\\x00\\x00\\x01\\x00\\x01\\x00\\x00\\x02\\x02\\x44\\x01\\x00\\x3b"
 
 GIFFILE=/tmp/g$$.gif
 GIFFILE2=/tmp/g2$$.gif
@@ -884,10 +892,16 @@ f.close()
 "
   echo $PhotoURL | $PYTHON -c "$READPGM"
 
-  # ok now here's the goofy part... the NumerousApp server alters stored
-  # images; not sure if that's for compression, or tile size, or both, or
-  # whatever. In any case, we can't read back the image at this point and
-  # expect it to compare -- it won't (it used to; now it doesn't).
+  # When I used the 35-byte image the NumerousApp server didn't read
+  # it back (it transformed it into a 43 byte image). I'm guessing that
+  # the 35 byte image isn't strictly legal, or at least it omits some
+  # things the Numerous server expects to see in there (they are processing
+  # images they receive and modifying them before storage)
+  #
+  # The 43-byte file I am using now appears to be "stable" with respect
+  # to that processing. However I've kept the logic in here that does
+  # the write-read-write-read and compares the last write/read cycle.
+  # It is superfluous now with the 43 byte image however.
   #
   # It turns out that what we CAN do, however, is readback the modified
   # image, then write THAT, then read THAT back again. In that case it
@@ -896,6 +910,16 @@ f.close()
   # in the long run to just not try to test data integrity for photo uploads.
   # You know whether it works when you see your results with your eyes...
   #
+
+  # So, first off, report whether the first cycle matches. This is actually
+  # superfluous and potentially confusing if you don't understand the 
+  # above essay. :) ... for that reason failure isn't reported.
+
+  cmp -s $GIFFILE $GIFFILE2
+  if [ $? -eq 0 ]; then infomsg "first pass image matches"; fi
+
+  # regardless, proceed with the second-pass method too, just because.
+
   mv $GIFFILE2 $GIFFILE       # make the file that we just read the "source"
 
   # this delete isnt necessary but makes us feel better that
@@ -940,6 +964,11 @@ verifyNR "None" "Expected None for photo URL" -P $METRIC
 # final output just print the stream
 infomsg "Now just outputting the resulting stream"
 doNR -S $METRIC
+
+infomsg "the first 5 lines of that stream..."
+infomsg "- * - * - * - * -"
+echo "$RESULT" | head -5
+infomsg "- * - * - * - * -"
 
 #
 # create 200 comments just to make sure the chunked iterators work
