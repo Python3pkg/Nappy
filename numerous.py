@@ -59,7 +59,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150324-1.5.2"
+_NumerousClassVersionString = "20150324-1.5.2+xx"
 
 #
 # metric object
@@ -974,8 +974,8 @@ class Numerous:
             if not rx:                            # i.e., STRING, no regexp
                 if m['label'] == labelspec:
                     if bestMatch:
-                        raise NumerousMetricConflictError(bestMatch['label'],
-                                                          m['label'],
+                        raise NumerousMetricConflictError((bestMatch['label'],
+                                                           m['label']),
                                                           conflictString)
 
                     bestMatch = m
@@ -985,8 +985,8 @@ class Numerous:
                     if matchType == "FIRST":
                         return self.metric(m['id'])
                     elif matchType == "ONE" and bestMatch:
-                        raise NumerousMetricConflictError(bestMatch['label'],
-                                                          m['label'],
+                        raise NumerousMetricConflictError((bestMatch['label'],
+                                                           m['label']),
                                                           conflictString)
 
                     # if this is "better" than our current best match, keep it
