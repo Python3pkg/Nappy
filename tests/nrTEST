@@ -536,6 +536,36 @@ TPGM="import numerous; numerous.NumerousMetric($DQ$METRIC$DQ).write(123456)"
 verifyPython " .. direct NumerousMetric constructor" "" "$TPGM"
 verifyNR 123456 "expected 123456" $METRIC
 
+#
+# create a second metric that has an identical name, so we can
+# test the failure mode of -n
+#
+
+infomsg "testing -n and -N duplicate exception cases"
+doNR -wq $METRIC $MVAL       # reset value to known
+doNR -wM +$M "$Mparams"
+DUPMETRIC=$RESULT
+
+infomsg "created $DUPMETRIC"
+
+doNR EXIT:1 -nq $M
+infomsg "$RESULT"
+
+doNR EXIT:1 -Nq $M
+infomsg "$RESULT"
+
+doNR -q --killmetric $DUPMETRIC
+
+# make another one that is similar (prefix)
+doNR -wM +${M}x "$Mparams"
+DUPMETRIC=$RESULT
+infomsg "created $DUPMETRIC"
+
+verifyNR $MVAL "expected $MVAL" -n $M
+doNR EXIT:1 -Nq $M
+infomsg "$RESULT"
+doNR -q --killmetric $DUPMETRIC
+
 # write a value
 verifyNR $$ "wrong write result" -w $METRIC $$
 
@@ -912,7 +942,7 @@ f.close()
   #
 
   # So, first off, report whether the first cycle matches. This is actually
-  # superfluous and potentially confusing if you don't understand the 
+  # superfluous and potentially confusing if you don't understand the
   # above essay. :) ... for that reason failure isn't reported.
 
   cmp -s $GIFFILE $GIFFILE2
