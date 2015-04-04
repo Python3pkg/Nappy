@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# nrd -- Numerous Display 
+# nrd -- Numerous Display
 #
 # Displays all of your numerous variables and values in text form
 # Basically this is a shell version of the numerous app on your phone
@@ -8,7 +8,8 @@
 #
 # options:
 #     -c credspec        as in nr / numerousKey
-#     -m metricspec        see below, can be repeated
+#     -m metricspec      see below, can be repeated
+#     -f fieldspec       fields to display
 #
 # Metric specification:
 #   There are several ways you can tell this what metrics to show.
@@ -23,6 +24,20 @@
 #
 #   If -m is given, NRDMETRICS environment variable is ignored.
 #
+# Field specification:
+#   By default the value of a metric is displayed. You can control this
+#   with -f, explicitly specifying the fields you want to see for each
+#   metric. The -f argument can be given multiple times, so, for example:
+#
+#        -f value -f description
+#
+#  would display the value and the description for each metric.
+#  If a field is a subfield of another dictionary, specify x.y, e.g.:
+#
+#        -f links.web
+#
+#  to display the 'web' element of the 'links' attribute.
+#
 
 from numerous import Numerous, numerousKey, NumerousAuthError
 import os
@@ -33,10 +48,12 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-m', '--metrics', action='append')
 parser.add_argument('-c', '--credspec')
+parser.add_argument('-f', '--fields', action='append')
 
 args = parser.parse_args()
 
-
+if not args.fields:
+    args.fields=['value']
 
 nr = Numerous(apiKey=numerousKey(args.credspec))
 try:
@@ -71,28 +88,38 @@ for subs in nr.subscriptions():
 
     # print it if: printing all, or if the ID or name are in the requested list
     if (not mIDsRqstd) or (mId in mIDsRqstd) or (md['label'] in mIDsRqstd):
-        vs = None
-        if md['kind'] == 'timer':
-            # note that for timers we are printing the time of the EVENT
-            # whereas the actual app prints the time until/since the event
-            vs = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(md['value']))
-        elif md['kind'] == 'currency':
-            vs = "${:.2f}".format(md['value'])
-        elif md['kind'] == 'percent':
-            vs = "{:.2f}%".format(md['value']*100)
-        else:
-            vs = "{}".format(md['value'])
+        fs = ""
+        for fname in args.fields:
+            if fname == 'value':
+                # special decoding for value
+                if md['kind'] == 'timer':
+                    # note that for timers we are printing the time
+                    # of the EVENT whereas the actual app prints the time
+                    # until/since the event
+                    fs += time.strftime('%Y-%m-%d %H:%M:%S ', time.localtime(md['value']))
+                elif md['kind'] == 'currency':
+                    fs += "${:.2f} ".format(md['value'])
+                elif md['kind'] == 'percent':
+                    fs += "{:.2f}% ".format(md['value']*100)
+                else:
+                    fs += "{} ".format(md['value'])
+            elif '.' in fname:
+                # XXX this should be recursive but currently just one level
+                try:
+                    x = fname.split('.')
+                    fs += "{} ".format(md[x[0]][x[1]])
+                except:
+                    fs += "??{}?? ".format(fname)
+            else:
+                try:
+                    fs += "{} ".format(md[fname])
+                except:
+                    fs += "??{}?? ".format(fname)
+
 
         if n == 0 and not firstone:
             print("")
 
-        print("{:<40s}  {}".format(md['label'],vs))
+        print("{:<40s}  {}".format(md['label'],fs))
         firstone = False
         n = (n + 1) % 5
-
-
-
-
-
-     
-
