@@ -5,6 +5,7 @@ import sys
 import os
 import argparse
 import string
+import datetime
 import time
 from numerous import Numerous, numerousKey, \
                      NumerousError, NumerousAuthError, NumerousMetricConflictError
@@ -128,6 +129,12 @@ from numerous import Numerous, numerousKey, \
 # then the value written to the metric will be the given date converted
 # into epochtime (UNIX "seconds since 1970"). This is what you want when
 # updating a "timer" type of metric.
+#
+# If you are writing a metric value and you format the "value" like this:
+#            "1234 @ mm/dd/yy hh:mm:ss"
+# then the value (1234 in this example) will be written with
+# the "updated" option (see NumerousMetric.write() API) set to the given time.
+#
 #
 # Without -w:
 #      -B (--subscriptions) : subscriptions will be read.
@@ -561,33 +568,32 @@ except NumerousError as x:
 #      the server only enforces that on some APIs and not others; but
 #      we choose to be conservative in what we send regardless.
 #
-#   2) Implement syntax for certain special circumstances. Right now the
-#      only special syntax is "EPOCHTIME: mm/dd/yy hh:mm:ss" which will
-#      be converted into a UNIX epochtime (useful for "timer" metrics)
+#   2) Implement syntax for certain special circumstances:
+#       * value@timestamp for setting "updated" times in write()s
+#       * EPOCHTIME: mm/dd/yy hh:mm:ss for "timer" metrics
 #
 
+
 def valueParser(s):
-    r = s                # default result is just the source
-
-    # is it just a naked integer?
-    try:
-        r = int(s)
-        return r
-    except ValueError:
-        pass
-
-    # is it just a naked float?
-    try:
-        r = float(s)
-        return r
-    except ValueError:
-        pass
-
-
-    # is it the EPOCHTIME: syntax?
     EpochTimeSyntax = "EPOCHTIME:"
-    if s.startswith(EpochTimeSyntax):
-        sx = s[len(EpochTimeSyntax):].lstrip(' ')    # the rest of s
+
+    rval = s                # default result is just the source
+
+    try:
+        ts = None
+        x = s.split('@')
+        s = x[0]
+        if len(x) == 2:
+            ts = "EPOCHTIME:" + x[1]
+        elif s.startswith(EpochTimeSyntax):
+            ts = s
+            x = None
+    except AttributeError:
+        x = [ s ]
+
+    tval = -1
+    if ts:               # we have an EPOCHTIME: or an '@' form
+        sx = ts[len(EpochTimeSyntax):].lstrip(' ')    # the rest of s
 
         # these are all the formats we'll try for converting a date stamp
         # personally I don't recommend you use the ones omitting the full
@@ -604,19 +610,40 @@ def valueParser(s):
         # try first mm/dd/yyyy then mm/dd/yy .. could add more formats too
         for fmt in dateformats:
             try:
-                r = float(time.strftime("%s", time.strptime(sx, fmt)))
-                return r
+                tval = float(time.strftime("%s", time.strptime(sx, fmt)))
+                break
             except:
                 pass
 
-        # but if we get all the way to here we know the value
-        # started with the EpochTimeSyntax but did not parse.
+        # if we get all the way to here without parsing
         # throw an exception because of that.
-        raise ValueError
+        if tval < 0:
+             raise ValueError
 
-    # fell through all the syntax possibilities so just return original
-    return r
 
+    # At this point tval is < 0 if no timestamp syntax was used, or else
+    # tval is the timestamp value and there may or may not still be a regular
+    # value to parse in x[0]
+
+    if x:
+        s = x[0]
+        try:
+            if len(s) > 0:
+                # is it just a naked integer?
+                try:
+                    rval = int(s)
+                except ValueError:
+                    # is it just a naked float?
+                    try:
+                        rval = float(s)
+                    except ValueError:
+                        rval = s
+        except TypeError:
+            rval = s
+    else:
+        rval = tval
+
+    return (rval, tval)
 
 
 #
@@ -968,7 +995,7 @@ def mainCommandProcessing(nr, args):
                             jval['value'] = vp
                     elif 'value' in jval:
                         # allow for EPOCHTIME: in value here
-                        jval['value'] = valueParser(jval['value'])
+                        jval['value'] = valueParser(jval['value'])[0]
 
                     metric = nr.createMetric(r['ID'], attrs=jval)
                     if args.json:
@@ -979,12 +1006,19 @@ def mainCommandProcessing(nr, args):
                 else:
                     # we are writing a metric value
                     try:
-                        val = valueParser(val)
+                        x = valueParser(val)
+                        val = x[0]
+                        if x[1] < 0:
+                            tval = None
+                        else:
+                            dt = datetime.datetime.fromtimestamp(x[1])
+                            tval = dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
                         try:
                             r['result'] = metric.write(val,
                                                        onlyIf = args.onlyIf,
                                                        add = args.plus,
-                                                       dictionary = args.json)
+                                                       dictionary = args.json,
+                                                       updated=tval)
                         except NumerousMetricConflictError as e:
                             exitStatus = 1
                             if args.json:
