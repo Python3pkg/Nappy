@@ -59,7 +59,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150324-1.5.2+xx"
+_NumerousClassVersionString = "20150413-1.5.2+xx"
 
 #
 # metric object
@@ -475,18 +475,27 @@ class NumerousMetric:
     # will do the read/modify/write for you automatically, unless you
     # specify overwriteAll=True
     #
+    # The cachedState is used for the merge; if this bothers you then you
+    # are doing something questionable. You can, though, force a server
+    # access by doing a .read() yourself immediately prior to this call
+    # to force read from the server. There's obviously still a race in that
+    # case (hence "doing something questionable").
+    #
     # NOTE WELL: if overwriteAll=True and you only send in a partial
     #            dict then all the other parameters of the metric will
     #            revert to their defaults. You rarely want that.
     #
     def update(self, dict, overwriteAll=False):
         if overwriteAll:
-            newParams = {}
+            self.__cachedState = {}
         else:
-            newParams = self.read(dictionary=True)
+            self.__ensureCache()
 
-        for k in dict:
-            newParams[k] = dict[k]
+        # we don't have to .copy() this even though we modify it
+        # in place (via this newParams alias) below; it then gets
+        # refreshed anyway with the results of the simpleAPI call.
+        newParams = self.__cachedState
+        newParams.update(dict)
 
         api = self.__getAPI('metric', 'PUT')
         self.__cachedState = self.nr._simpleAPI(api, jdict=newParams)
@@ -687,8 +696,7 @@ class Numerous:
         dflts = info.get('defaults', {})
 
         # copy the defaults, assume no moron put a "None" in there
-        for k in dflts:
-            substitutions[k] = dflts[k]   # btw don't put a None in 'defaults'
+        substitutions.update(dflts)
 
         # copy the supplied kwargs, which might have None (skip those)
         for k in kwargs:
@@ -881,8 +889,8 @@ class Numerous:
     def debug(self, lvl=1):
         prev = self.__debug
         self.__debug = lvl
-        HTTPConnection.debuglevel = lvl
-        if lvl > 1:
+        if lvl > 1:    # 2 or more turns out lower level debug output
+            HTTPConnection.debuglevel = lvl
             logging.basicConfig()
             logging.getLogger().setLevel(logging.DEBUG)
             requests_log = logging.getLogger("requests.packages.urllib3")
@@ -1058,9 +1066,7 @@ class Numerous:
     def createMetric(self, label, value=None, attrs={}):
         api = self._makeAPIcontext(self.__APIInfo['create'], 'POST')
 
-        j = {}
-        for k in attrs:
-            j[k] = attrs[k]
+        j = attrs.copy()
         j['label'] = label
         if value:
             j['value'] = value
@@ -1139,6 +1145,9 @@ class Numerous:
             self.statistics['serverRequests'] += 1
 
             try:
+                if self.__debug > 0:
+                    print("DEBUG: request({}, {})".format(httpmeth, url))
+
                 resp = requests.request(httpmeth, url,
                                         auth=self.authTuple,
                                         data=data,
