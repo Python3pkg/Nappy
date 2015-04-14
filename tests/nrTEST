@@ -2,7 +2,17 @@
 #
 # test script for the nr program
 #
+# You should set NUMEROUSAPIKEY in the environment as appropriate.
+# If you don't set it, we'll try ~/.myCred which probably isn't right.
 #
+# For the fine-grained permissions test you will need a second user ID
+# and apikey, which you should supply via NUMEROUSAPIKEY2 environment
+# variable. There is no default for that; if you do not supply the
+# secondary api key then some of the fine-grained permissions tests
+# will be skipped (some can be run with just one ID, but anything that
+# actually tries to test enforcement of permissions will be skipped)
+#
+
 
 
 PATH=$HOME/bin:$PATH
@@ -17,6 +27,8 @@ QUICK=no
 DEVTEST=no
 NRTEST=./nrTEST      # only used in DEVTEST case
 T429TEST=./t429.py   # only used in the DEVTEST case
+
+
 
 #
 # OPTIONS
@@ -854,6 +866,79 @@ then
   failout "the designated comment is still visible in the stream"
 fi
 infomsg "It is gone! (yay!)"
+
+
+# PERMISSIONS TESTING
+
+# get our user ID
+doNR -Uj
+parsejson "$RESULT" id
+USERID_ME="$RESULT"
+infomsg "My user ID is $USERID_ME"
+
+# set the test metric to visibility private, which enables fine-grained perms
+doNR -wMq $METRIC '{ "visibility" : "private" }'
+
+# permissions collection should be empty
+verifyNR "" "permissions collection" -A $METRIC
+
+# set all the permissions for ourselves.
+# This is actually a no-op because permissions don't apply to the metric 
+# owner; I wonder if it might become disallowed by the server some day.
+
+doNR -wAq ${METRIC}/${USERID_ME} '{ "readMetric": true, "editPermissions": true, "editMetric": true, "updateValue": true}'
+
+# verify that those permissions got set
+for P in readMetric editPermissions editMetric updateValue
+do
+  verifyNR "True" "Checking $P" -A "${METRIC}[$P]"
+done
+
+# if we have an alternate ID try that out.
+# First off the alternate ID should not be able to read it right now
+# because we set visibility private and have not established perms
+if [ "x$NUMEROUSAPIKEY2" != x ]
+then
+    K2=$NUMEROUSAPIKEY2       # just for brevity
+
+    # find out secondary user ID
+    doNR -Uj -c "$K2"
+    parsejson "$RESULT" id
+    USERID_2="$RESULT"
+    infomsg "Secondary user ID is $USERID_2"
+
+    # try reading metric as unpermitted secondary user
+    doNR EXIT:1 -j -c "$K2" $METRIC
+    # resulting error json output should have 403 in it (Forbidden)
+    echo "$RESULT" | grep -q 403
+    if [ $? -ne 0 ]
+    then
+        failout "did not find expected 403 error"
+    fi
+
+    # now give K2 read permission
+    doNR -wAq ${METRIC}/${USERID_2} '{ "readMetric": true }'
+
+    # now test reading it. First set it to -99 just so we know what it is
+    V="-99"
+    doNR -wq $METRIC "$V"
+
+    verifyNR "$V" "reading back as $USERID_2" -c "$K2" $METRIC
+
+    # writing it as secondary user should fail
+    doNR EXIT:1 -wq -c "$K2" $METRIC 12345
+    doNR EXIT:1 -wq+ -c "$K2" $METRIC 12345  # this way too
+
+    # give the secondary user write permission
+    doNR -wAq ${METRIC}/${USERID_2} '{ "updateValue": true }'
+
+    # try writes again
+    verifyNR "888" "writing metric as secondary user" -w -c "$K2" $METRIC 888
+    verifyNR "889" "adding to metric as secondary user" -w+ -c "$K2" $METRIC 1
+
+    infomsg "TODO: Need to set a few hundred perms and test collection iterator"
+
+fi
 
 # testing photos... first make a tiny GIF file (one pixel image)
 

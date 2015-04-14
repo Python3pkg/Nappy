@@ -813,6 +813,9 @@ def getIterableStuff(m, i, limit):
     return list
 
 
+
+
+
 # write an image file to either a metric or to the user record
 def doPhotoWrite(metricOrNR, imageFName):
     try:
@@ -1205,7 +1208,11 @@ def mainCommandProcessing(nr, args):
                             r['result'] = d
                 except NumerousError:
                     exitStatus = 1
-                    r['result'] = None
+                    if args.json:
+                        r['result'] = { "NumerousError" : { "code" : e.code, "reason" : e.reason }}
+                    else:
+                        r['result'] = "Error: " + e.reason
+
 
             else:
                 try:
@@ -1219,9 +1226,15 @@ def mainCommandProcessing(nr, args):
                         r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
                     else:
                         r['result'] = d['value']
-                except NumerousError:
+                except NumerousError as e:
                     exitStatus = 1
-                    r['result'] = None
+                    if args.json:
+                        r['result'] = { "NumerousError" : { "code" : e.code, "reason" : e.reason }}
+                    elif e.code == 403:
+                        r['result'] = "No read permission on this metric"
+                    else:
+                        r['result'] = "Error: " + e.reason
+
 
             resultList.append(r)
 
