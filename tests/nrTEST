@@ -249,15 +249,6 @@ exit(0)
 EOF
 
 
-# silly little function to add numbers using python
-# because sometimes (believe it or not) bc isn't there
-# We KNOW python is here
-#
-# result in RESULT
-add() {
-  RESULT=`$PYTHON -c "print( $1 + $2 )"`
-}
-
 # report how much API quota is available, for infotainment purposes.
 # Note that we turn off the Numerous class API throttling so we can
 # query the server (make one API call) and get a result without ourselves
@@ -359,29 +350,61 @@ doNR() {
 # Expected result is $1 ; Detail info for unexpected is $2;
 # Remaining arguments go to doNR
 #
+# special syntax for $1:
+#  CONTINUE means this doesn't die for failure (just notes it)
+#  SOMECONTINUE means this doesn't die depending on the -C flag
+#  CONTAINS means instead of requiring an exact match "just contains" works
+#
+#  You can combine, e.g., verifyNR CONTINUE CONTAINS blah blah blah
+#
+#
 verifyNR() {
   DIE=yes
-  case "x$1" in
-    xCONTINUE)
-      DIE=no
-      shift
-      ;;
+  CONTAINS=no
+  while :
+  do
+    case "x$1" in
+      xCONTINUE)
+        DIE=no
+        shift
+        ;;
 
-    xSOMECONTINUE)
-      if [ $SOMECONTINUE = "yes" ]
-      then
-        DIE="no"
-      fi
-      shift
-      ;;
-  esac
+      xSOMECONTINUE)
+        if [ $SOMECONTINUE = "yes" ]
+        then
+          DIE="no"
+        fi
+        shift
+        ;;
+      xCONTAINS)
+        CONTAINS=yes
+        shift
+        ;;
+      x*)
+        break
+        ;;
+    esac
+  done
 
   EXPECTED=$1
   ERRMSG=$2
   shift 2
 
   doNR "$@"
-  if [ "x$RESULT" != "x$EXPECTED" ]
+  GOTIT=no
+  if [ $CONTAINS = yes ]
+  then
+    echo " " "$RESULT" | grep -q -e "$EXPECTED"
+    if [ $? -eq 0 ]
+    then
+      GOTIT=yes
+    fi
+  elif [ "x$RESULT" = "x$EXPECTED" ]
+  then
+    GOTIT=yes
+  fi
+
+  if [ $GOTIT = "no" ]
   then
     if [ $DIE = "no" ]
     then
@@ -589,8 +612,7 @@ verifyNR "" "-wy" "EXIT:1" -wyq $METRIC $$
 
 # increment by 1
 doNR $METRIC
-add $RESULT 1
-NEWVAL=$RESULT
+NEWVAL=$(($RESULT + 1))
 verifyNR $NEWVAL "Added 1" -w+ $METRIC 1
 
 # now writing the original test value with -y should succeed
@@ -869,12 +891,16 @@ infomsg "It is gone! (yay!)"
 
 
 # PERMISSIONS TESTING
+infomsg "TESTING FINE-GRAINED PERMISSIONS"
 
 # get our user ID
 doNR -Uj
-parsejson "$RESULT" id
+UJ="$RESULT"
+parsejson "$UJ" id
 USERID_ME="$RESULT"
-infomsg "My user ID is $USERID_ME"
+parsejson "$UJ" userName
+USERNAME_ME="$RESULT"
+infomsg "My user ID is $USERID_ME (userName: $USERNAME_ME)"
 
 # set the test metric to visibility private, which enables fine-grained perms
 doNR -wMq $METRIC '{ "visibility" : "private" }'
@@ -897,37 +923,51 @@ done
 # if we have an alternate ID try that out.
 # First off the alternate ID should not be able to read it right now
 # because we set visibility private and have not established perms
-if [ "x$NUMEROUSAPIKEY2" != x ]
+if [ "x$NUMEROUSAPIKEY2" = x ]
 then
+    infomsg "SKIPPING some permission tests because no second APIKey given."
+    infomsg " ... please set environment variable NUMEROUSAPIKEY2 to enable."
+else
     K2=$NUMEROUSAPIKEY2       # just for brevity
+
+    # Set metric to a known value 
+    V="86753"
+    doNR -wq $METRIC "$V"
 
     # find out secondary user ID
     doNR -Uj -c "$K2"
-    parsejson "$RESULT" id
+    UJ="$RESULT"
+    parsejson "$UJ" id
     USERID_2="$RESULT"
-    infomsg "Secondary user ID is $USERID_2"
+    parsejson "$UJ" userName
+    USERNAME_2="$RESULT"
+    infomsg "Secondary user ID is $USERID_2 (userName: $USERNAME_2)"
 
     # try reading metric as unpermitted secondary user
-    doNR EXIT:1 -j -c "$K2" $METRIC
-    # resulting error json output should have 403 in it (Forbidden)
-    echo "$RESULT" | grep -q 403
-    if [ $? -ne 0 ]
-    then
-        failout "did not find expected 403 error"
-    fi
+    verifyNR CONTAINS 403 "reading forbidden metric" EXIT:1 -j -c "$K2" $METRIC
+
+    # try a few other ways to access it as unpermitted secondary user
+    verifyNR CONTAINS 403 "stream from forbidden metric" EXIT:1 -Sj -c "$K2" $METRIC
+
+    verifyNR CONTAINS 403 "events from forbidden metric" EXIT:1 -Ej -c "$K2" $METRIC
+
+    verifyNR CONTAINS 403 "interactions from forbidden metric" EXIT:1 -Ij -c "$K2" $METRIC
+
+    # XXX I was going to test "shouldn't able to like/comment/error" but
+    #     as of 4/14/2015 you CAN do those things even on a private metric
+    #     and even with no permissions at all. So I'm not sure if that
+    #     is a server bug or functions-as-designed. 
+
 
     # now give K2 read permission
     doNR -wAq ${METRIC}/${USERID_2} '{ "readMetric": true }'
-
-    # now test reading it. First set it to -99 just so we know what it is
-    V="-99"
-    doNR -wq $METRIC "$V"
 
     verifyNR "$V" "reading back as $USERID_2" -c "$K2" $METRIC
 
     # writing it as secondary user should fail
     doNR EXIT:1 -wq -c "$K2" $METRIC 12345
     doNR EXIT:1 -wq+ -c "$K2" $METRIC 12345  # this way too
+    doNR EXIT:1 -wqy -c "$K2" $METRIC 12345  # and this way
 
     # give the secondary user write permission
     doNR -wAq ${METRIC}/${USERID_2} '{ "updateValue": true }'
@@ -936,7 +976,78 @@ then
     verifyNR "888" "writing metric as secondary user" -w -c "$K2" $METRIC 888
     verifyNR "889" "adding to metric as secondary user" -w+ -c "$K2" $METRIC 1
 
-    infomsg "TODO: Need to set a few hundred perms and test collection iterator"
+    # the read should still fail... which is kind of amusing
+    verifyNR CONTAINS 403 "reading forbidden metric (have write perm)" EXIT:1 -j -c "$K2" $METRIC
+
+    # oh boy... what this is gonna do is make 250 permission entries
+    # we don't have 250 legitimate user IDs so we just make some up.
+    # This "works" though I'm not sure if it should.
+    doNR -Aq --delete $METRIC '!ALL!'     # first clear out all perms
+    N=250
+    TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+d = { \"readMetric\" : True }
+
+for i in range($N):
+    u = '69696'+str(9000+i)
+    metric.set_permission(d, userId=u)
+"
+
+    infomsg "This next step will take a minute or two... "
+    verifyPython "setting $N permissions" "" "$TPGM"
+
+    # now verify that there are the right number of permission entries
+    VRFY="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+n = 0
+
+for x in metric.permissions():
+  n += 1
+
+print(n)
+"
+    verifyPython "checking have $N permissions" "$N" "$VRFY"
+
+    # now change the first 10 of them
+    TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+d = { \"readMetric\" : True, \"updateValue\" : True }
+
+for i in range(10):
+    u = '69696'+str(9000+i)
+    metric.set_permission(d, userId=u)
+"
+
+    verifyPython "modifying some of them" "" "$TPGM"
+
+    # should still have the same number
+    verifyPython "checking still have $N permissions" "$N" "$VRFY"
+
+    # delete the first 100 +/- some random number permissions
+    # and see if we have the right number left
+    # 
+    TPGM="import numerous
+import random
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+n = 95 + random.randrange(10)
+deleted_n = n
+for x in metric.permissions():
+    metric.delete_permission(x['userId'])
+    n -= 1
+    if n == 0:
+        break
+
+n = 0
+for x in metric.permissions():
+    n += 1
+
+print($N - (deleted_n + n))   # should be zero
+"
+    verifyPython "deleting some/counting rest" "0" "$TPGM"
 
 fi
 
