@@ -13,10 +13,11 @@ from numerous import Numerous, numerousKey, \
 
 #
 # usage
-#  nr [ -c credspec ] [ -t limit ] [-D] [-jknNqw+ISEMPB] [-y] [ m1 [v1] ]...
+#  nr [ -c credspec ] [ -t limit ] [-D] [-jknNqw+/ISEMPBA] [-y] [ m1 [v1] ]...
 #  nr [ -c credspec ] [-Dnq] -I --delete m1 interaction1 ...
 #  nr [ -c credspec ] [-Dnq] -E --delete m1 event1 ...
 #  nr [ -c credspec ] [-Dnq] -P --delete m1 ...
+#  nr [ -c credspec ] [-Dnq] -A --delete m1 userId1 ...
 #  nr [ -c credspec ] [-Dq] --killmetric m1 ...
 #  nr [ -c credspec ] [-Dqj][-U]
 #  nr [ -c credspec ] [-Dqj][-UPw] photo-file
@@ -74,6 +75,12 @@ from numerous import Numerous, numerousKey, \
 #
 # Note that metricByLabel() can be expensive, but it is (sometimes) convenient.
 #
+# If you have a slash ('/') in your metric label and want to use -n/-N you
+# will have to specify the '-/' ('--noslash') option to turn off slash
+# notation for subIDs. If you need subID parsing AND you have a slash
+# in your label, you are hosed. Get the numeric ID and don't use -n/-N
+# in that case.
+#
 # If -w (--write) is specified, SOMETHING will be written. That something is
 # either metric value itself, or with another option:
 #
@@ -83,6 +90,16 @@ from numerous import Numerous, numerousKey, \
 #     -I (--interaction) : an interaction (comment/like/error) will be written
 #     -P (--photo) : a photo is attached to the metric. value1 MUST
 #                    be a filename. A mimeType will be inferred.
+#     -A (--permission) : permission structure is written.
+#        The metricId should be of form "metricId/userId" and the value
+#        should be a valid JSON permissions dictionary.
+#        PAY ATTENTION: JSON not PYTHON DICT STRING. This trips people
+#        up with True vs true (use true)
+#
+#        The userId can be contained in the JSON instead of the / notation;
+#        if it is in both the / notation one takes precedence. That can be
+#        useful for duplicating for multiple users from a template.
+#
 #     -M (--metric) : a metric is CREATED or UPDATED.
 #        To create a metric, the name (m1) MUST begin with a '+' which
 #        will be stripped ("+NewName" becomes "NewName"). The "-n" flag
@@ -137,6 +154,11 @@ from numerous import Numerous, numerousKey, \
 #
 #
 # Without -w:
+#      -A (--permissions) : permissions will be read
+#         * if a userId is given via slash notation ('2347293874234/98764782')
+#           then just that one permission will be read/displayed.
+#         * otherwise the entire collection will be read/displayed.
+#
 #      -B (--subscriptions) : subscriptions will be read.
 #         * If no metric IDs are given your entire set of subscriptions
 #           will be read.
@@ -150,14 +172,12 @@ from numerous import Numerous, numerousKey, \
 #
 #      -E (--event) : the events will be read.
 #         Events are value changes.
-#         You can read a SINGLE event by ID using the field notation:
-#                -E 7834758745[245235235]
-#         (metric ID and [eventID]) and you can use -n notation for the metricID:
-#                -E metname[245235235]
+#         You can read a SINGLE event by ID using slash notation:
+#                -E 7834758745/245235235
+#         (metric ID and /eventID).
 #
 #      -I (--interaction) : interactions will be read.
 #         Interactions are everything other than value changes
-#         You can read a SINGLE interaction by ID using the field notation
 #
 #      -S (--stream) : the stream will be read
 #         The stream is events and interactions together
@@ -310,9 +330,36 @@ from numerous import Numerous, numerousKey, \
 #   DELETE AN EVENT (id 23420983483332)
 #       nr --delete -E 34552988823401 23420983483332
 #
+#   PERMISSIONS:
+#     NOTE: Permissions only have effect if the metric "visibility"
+#           attribute is set to "private".
+#
+#     Give user 66178735 read permission on metric 34552988823401:
+#       nr -wA 34552988823401 '{ userId : "66178735", "readMetric" : true }'
+#
+#     Same using slash notation for userId:
+#       nr -wA 34552988823401/66178735 '{ "readMetric" : true }'
+#
+#     Display all the permissions for a metric:
+#       nr -A 34552988823401
+#
+#     Display user 66178735's permissions:
+#       nr -A 34552988823401/66178735
+#
+#     Display user 66178735's read permission specifically:
+#       nr -A '34552988823401/66178735[readMetric]'
+#
+#     Delete user 66178735's permissions on a metric:
+#       nr -A --delete '34552988823401 66178735'
+#
+#     This form allows deleting ALL permissions on a metric (be careful!):
+#       nr -A --delete '34552988823401' !ALL!
+#
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-V', '--version', action="store_true")
+parser.add_argument('-/', '--noslash', action="store_true")
 parser.add_argument('-c', '--credspec')
 parser.add_argument('-j', '--json', action="store_true")
 parser.add_argument('-n', '--name', action="store_true")
@@ -330,6 +377,7 @@ parser.add_argument('--ensurerate', type=int, default=0)             # use with 
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
 wgx.add_argument('-E', '--event', action="store_true")
+wgx.add_argument('-A', '--permissions', dest="perms", action="store_true")
 wgx.add_argument('-B', '--subscriptions', dest="subs", action="store_true")
 wgx.add_argument('-I', '--interaction', action="store_true")
 wgx.add_argument('-S', '--stream', action="store_true")
@@ -356,6 +404,11 @@ if args.regexp:
     args.name = True
 
 
+# many operations never take subIDs so turn on noslash for you automatically
+# for those. Basically slash fields only happen for event/interation/perms
+if not (args.event or args.perms or args.interaction):
+    args.noslash = True
+
 # --delete is exclusive with MUCH of the 'wgx' exclusive
 # group but not all
 #   ... so couldn't use built-in exclusion features
@@ -376,20 +429,28 @@ if args.delete:
     if bad:
         exit(1)
 
-    if not (args.event or args.interaction or args.photo):
-        print("--delete requires -E/--event, -I/--interaction, or -P/--photo")
+    if not (args.event or args.interaction or args.photo or args.perms):
+        print("--delete requires -E/--event, -I/--interaction, -A/--permissions, or -P/--photo")
         exit(1)
 
 
 # --user has similar (but not quite the same) exclusion rules
 if args.user:
     nope = { "plus", "stream", "metric", "onlyIf", "event", "interaction",
-             "key", "subs", "killmetric", "name" }
+             "key", "subs:subscriptions", "killmetric", "name",
+             "perms:permissions" }
     argsDict = vars(args)
     bad = False
-    for x in nope:
-        if argsDict.get(x):
-            print("Can't have --user and --" + x)
+    for xt in nope:
+        x = xt.split(':')
+        k = x[0]
+        try:
+            optname = x[1]
+        except:
+            optname = k
+
+        if argsDict.get(k):
+            print("Can't have --user and --" + optname)
             bad = True
     if bad:
         exit(1)
@@ -449,7 +510,7 @@ if args.onlyIf and not args.write:
 if args.write or args.delete:
     for m in args.keyvals[0::2]:
         if '[' in m:
-            print("Can only have subfields for reading:", m)
+            print("Can only use [field] notation for reading:", m)
             exit(1)
 
 
@@ -466,7 +527,6 @@ if args.key:
   else:
       print("No API Key")
       exit(1)
-
 
 
 # if we've been asked to report on rate limits then just do that first
@@ -647,16 +707,6 @@ def valueParser(s):
 
 
 #
-# FIELD notation is overloaded to either be an actual field
-#       name (e.g., 'label', 'authorId', etc) or sometimes it
-#       is a raw event or interaction ID and we need to know difference
-# Arguably, this is a silly hack and we should have made more explicit
-# command-line argument syntax to distinguish the two. But we're on a roll.
-#
-def isEventOrInteractionId(s):
-    return s.isdigit()
-
-#
 # support function for the metric[field] concept
 # Given a dictionary (usually a Numerous result) and a field name that
 # is (supposedly) either in that dictionary OR in a subdictionary,
@@ -707,7 +757,7 @@ def printStreamResults(items, fld):
         print(items)             # these are error messages
     else:
         for i in items:
-            if fld and not isEventOrInteractionId(fld):
+            if fld:
                 print(i.get(fld,None))
             else:
                 c = i.get('commentBody', None)
@@ -721,17 +771,33 @@ def printEventResults(r, fld):
         print(r)                 # these are error messages
     else:
         for i in r:
-            if fld and not isEventOrInteractionId(fld):
+            if fld:
                 print(i.get(fld,None))
             else:
                 # the initial value when a metric is created
                 # does not have an authorId (is this a server bug?)
                 # so we need to be careful...
                 a = i.get('authorId', 'INITIAL-CREATION-VALUE')
-                print(i['value'],"@",i['updated'],"by",a)
+                print(i['value'],"@",i['updated'],"by",a,"id",i['id'])
+
+def printPerms(r, fld):
+    if type(r) == str:
+        print(r)                 # these are error messages
+    else:
+        for i in r:
+            if fld:
+                print(i.get(fld,None))
+            else:
+                s = i['userId'] + " on " + i['metricId'] + ": "
+                for k in [ 'readMetric', 'updateValue', 'editPermissions', 'editMetric' ]:
+                    if i.get(k, False):
+                        s += k
+                        s += " "
+
+                print(s)
 
 def printDeleteResults(r):
-    print("%s[%s] -- %s" %(r['ID'], r['delID'], r['result']))
+    print("%s/%s -- %s" %(r['ID'], r['delID'], r['result']))
 
 
 
@@ -788,27 +854,53 @@ def mainCommandProcessing(nr, args):
     # The whole way all this works is a hack that obviously grew over time :)
     #
     mspecIDKey = '_*id*_'
+    mspecID2Key = '_*id2*_'
     mspecFIELDKey = '_*field*_'
-
     #
-    # Sometimes it is m1/v1 pairs sometimes just metrics
+    # Sometimes it is m1 v1 pairs sometimes just metrics
     #
     if args.write or (args.delete and not args.photo):
-        metrics = args.keyvals[0::2]
+        xm = args.keyvals[0::2]
         values = args.keyvals[1::2]
 
     else:
-        metrics = []
-        for m in args.keyvals:
-            if '[' in m and not args.killmetric:
-                x = m.split('[')
+        xm = args.keyvals
+
+    # parse any field and ID2 specifications:
+    metrics = []
+    for m in xm:
+        id = m
+        id2 = None
+        fld = None
+
+        # don't even do any mods if killmetric (paranoid/careful)
+        if not args.killmetric:
+            # first split off any field definition
+            if '[' in id:
+                x = id.split('[')
                 # very rudimentary syntax checks
                 if len(x) != 2 or not x[1].endswith(']'):
-                    print("bad metric specification",m)
+                    print("bad metric specification", m)
                     exit(1)
                 # nuke the trailing ']' on the field spec
-                m = { mspecIDKey : x[0], mspecFIELDKey : x[1][:-1] }
-            metrics.append(m)
+                fld = x[1][:-1]
+                id = x[0]
+
+            # Check for slash notation unless told not to.
+            if (not args.noslash) and '/' in id:
+                x = id.split('/')
+                if len(x) == 2:
+                    id2 = x[1]
+                    id = x[0]
+
+            if id2 or fld:
+                m = { mspecIDKey : id }
+                if id2:
+                    m[ mspecID2Key ] = id2
+                if fld:
+                    m[ mspecFIELDKey ] = fld
+
+        metrics.append(m)
 
 
     #
@@ -868,7 +960,11 @@ def mainCommandProcessing(nr, args):
         while len(metrics):
             mspec = metrics.pop(0)
             if mspecIDKey in mspec:
-                r = { 'ID' : mspec[mspecIDKey], 'FIELD' : mspec[mspecFIELDKey] }
+                r = { 'ID' : mspec[mspecIDKey] }
+                if mspecFIELDKey in mspec:
+                    r['FIELD'] = mspec[mspecFIELDKey]
+                if mspecID2Key in mspec:
+                    r['ID2'] = mspec[mspecID2Key]
             else:
                 r = { 'ID' : mspec }
 
@@ -920,9 +1016,15 @@ def mainCommandProcessing(nr, args):
                         metric.interactionDelete(delWhat)
                     elif args.photo:
                         metric.photoDelete()
+                    elif args.perms:
+                        if delWhat == '!ALL!':
+                            for x in metric.permissions():
+                                metric.delete_permission(x['userId'])
+                        else:
+                            metric.delete_permission(delWhat)
                     else:                  # never happens
                         raise ValueError   # should not happen
-                    r['result'] = "DELETED"
+                    r['result'] = " Deleted"
                 except NumerousError as v:
                     exitStatus = 1
                     r['result'] = "ERROR / Not Found"
@@ -953,7 +1055,15 @@ def mainCommandProcessing(nr, args):
                     except ValueError:     # e.g., "EPOCHTIME: " bad format
                         jval = { '__naked__' : val }  # this will get dealt with below
 
-                if args.interaction:
+                if args.perms:
+                     if '__naked__' in jval:
+                         r['result'] = "Permissions must be JSON format: " + val
+                         exitStatus = 1
+                     else:
+                         u = r.get('ID2', None)
+                         r['result'] = metric.set_permission(jval, userId=u)
+
+                elif args.interaction:
                     # interactions are comments/likes/errors
                     # if you specify a naked string it's a comment
                     # you specify the other forms (or comments if you like)
@@ -1041,10 +1151,17 @@ def mainCommandProcessing(nr, args):
                     r['result'] = r['ID'] + " delete FAILED " + e.reason
 
             elif args.interaction:
-                if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
-                    r['result'] = [ metric.interaction(r['FIELD']) ]
+                if 'ID2' in r:
+                    r['result'] = [ metric.interaction(r['ID2']) ]
                 else:
                     iterable = metric.interactions()
+                    r['result'] = getIterableStuff(metric, iterable, args.limit)
+
+            elif args.perms:
+                if 'ID2' in r:
+                    r['result'] = [ metric.get_permission(r['ID2']) ]
+                else:
+                    iterable = metric.permissions()
                     r['result'] = getIterableStuff(metric, iterable, args.limit)
 
             elif args.stream:
@@ -1054,8 +1171,8 @@ def mainCommandProcessing(nr, args):
                 r['result'] = getIterableStuff(metric, iterable, args.limit)
 
             elif args.event:
-                if 'FIELD' in r and isEventOrInteractionId(r['FIELD']):
-                    r['result'] = [ metric.event(r['FIELD']) ]
+                if 'ID2' in r:
+                    r['result'] = [ metric.event(r['ID2']) ]
                 else:
                     iterable = metric.events()
                     r['result'] = getIterableStuff(metric, iterable, args.limit)
@@ -1128,6 +1245,8 @@ def mainCommandProcessing(nr, args):
                         printStreamResults(rslt, fld)
                     elif args.event:
                         printEventResults(rslt, fld)
+                    elif args.perms:
+                        printPerms(rslt, fld)
                     else:
                         print(rslt)       # likely python dict output (use -j for JSON)
 
@@ -1137,7 +1256,6 @@ def mainCommandProcessing(nr, args):
         print("Statistics for {}:".format(nr))
         for k in nr.statistics:
             print("{:>24s}: {}".format(k, nr.statistics[k]))
-        
 
     return exitStatus
 

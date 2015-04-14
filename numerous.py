@@ -59,7 +59,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150413-1.5.2+xx"
+_NumerousClassVersionString = "20150413-1.5.2+xxx"
 
 #
 # metric object
@@ -167,6 +167,29 @@ class NumerousMetric:
         'DELETE' : {
             'success-codes' : [ 204 ]
         }
+    }
+
+    # permissions collection
+    __APIInfo['permissions-collection'] = {
+        'endpoint' : '/v1/metrics/{metricId}/permissions',
+        # GET the permissions collection
+        'GET' : {
+            'next' : 'nextURL',
+            'list' : 'permissions'
+        }
+    }
+
+
+    # individual permissions : GET, PUT, DELETE
+    __APIInfo['permission'] = {
+        'endpoint' : '/v1/metrics/{metricId}/permissions/{userId}',
+        'defaults' : {
+            'userId': 'me'            # default userId meaning "myself"
+        },
+        'DELETE' : {
+            'success-codes' : [ 204 ]
+        }
+
     }
 
 
@@ -386,6 +409,28 @@ class NumerousMetric:
     # iterator
     def interactions(self):
         return self.__collections('interactions')
+
+    # iterator - the entire collection of permissions for this metric
+    def permissions(self):
+        return self.__collections('permissions-collection')
+
+    # an individual permission for the given userId
+    def get_permission(self, userId=None):
+        api = self.__getAPI('permission', 'GET', userId=userId)
+        return self.nr._simpleAPI(api)
+
+    def set_permission(self, perms, userId=None):
+        # if you don't specify a userId but DO have a userId
+        # in the perms, use that one
+        if (not userId) and ('userId' in perms):
+            userId= perms['userId']
+        api = self.__getAPI('permission', 'PUT', userId=userId)
+        return self.nr._simpleAPI(api, jdict=perms)
+
+    def delete_permission(self, userId):
+        api = self.__getAPI('permission', 'DELETE', userId=userId)
+        self.nr._simpleAPI(api)
+        # no return value
 
     # NOTE: This will be subscriptions for THIS metric
     #       See also Numerous.subscriptions which will operate by USER
