@@ -381,7 +381,7 @@ verifyNR() {
 }
 
 verifyPython() {
-  infomsg "$1"
+  echo "TESTING::: $PYTHON -c [ ... $1 ]"
   $PYTHON -c "$3" > $TMPFILE
   if [ $? -ne 0 ]; then failout "non-zero exit from python"; fi
   RESULT=`cat $TMPFILE`
@@ -472,8 +472,6 @@ Mparams="{ \"private\" : true, \"value\" : $MVAL }"
 doNR -wM +$M "$Mparams"
 METRIC=$RESULT
 
-infomsg "created $METRIC"
-
 DELETE_THESE="$DELETE_THESE $METRIC"
 
 # see if it got created with the correct privacy and value
@@ -503,7 +501,7 @@ i = $ID
 print(nr.metric(i).read())
 "
 
-  verifyPython " .. id: $ID" $MVAL "$TPGM"
+  verifyPython "id: $ID" $MVAL "$TPGM"
 done
 
 # testing the exception cases
@@ -517,7 +515,7 @@ except KeyError:
   print('KeyError')
   exit(0)
 "
-verifyPython " .. id: {}" "KeyError" "$TPGM"
+verifyPython "id: {}" "KeyError" "$TPGM"
 
   TPGM="import numerous
 nr = numerous.Numerous(apiKey=\"$APIKEY\")
@@ -529,11 +527,11 @@ except numerous.NumerousError as x:
   print('NumerousError {}'.format(x.code))
   exit(0)
 "
-verifyPython " .. id: {'id' : 'something bogus'}" "NumerousError 400" "$TPGM"
+verifyPython "id: {'id' : 'something bogus'}" "NumerousError 400" "$TPGM"
 
 # try the default constructor
 TPGM="import numerous; numerous.NumerousMetric($DQ$METRIC$DQ).write(123456)"
-verifyPython " .. direct NumerousMetric constructor" "" "$TPGM"
+verifyPython "direct NumerousMetric constructor" "" "$TPGM"
 verifyNR 123456 "expected 123456" $METRIC
 
 #
@@ -546,24 +544,21 @@ doNR -wq $METRIC $MVAL       # reset value to known
 doNR -wM +$M "$Mparams"
 DUPMETRIC=$RESULT
 
-infomsg "created $DUPMETRIC"
-
 doNR EXIT:1 -nq $M
-infomsg "$RESULT"
+infomsg "::AS EXPECTED:: $RESULT"
 
 doNR EXIT:1 -Nq $M
-infomsg "$RESULT"
+infomsg "::AS EXPECTED:: $RESULT"
 
 doNR -q --killmetric $DUPMETRIC
 
 # make another one that is similar (prefix)
 doNR -wM +${M}x "$Mparams"
 DUPMETRIC=$RESULT
-infomsg "created $DUPMETRIC"
 
 verifyNR $MVAL "expected $MVAL" -n $M
 doNR EXIT:1 -Nq $M
-infomsg "$RESULT"
+infomsg "::AS EXPECTED:: $RESULT"
 doNR -q --killmetric $DUPMETRIC
 
 # write a value
@@ -578,7 +573,6 @@ doNR -wIq $METRIC "$C"
 verifyNR "$C" "Comment readback" -I --limit 1 "$METRIC[commentBody]"
 
 # AGAIN write the same value with -y, should "fail"
-infomsg "-wyq test AGAIN"
 verifyNR "" "-wy" "EXIT:1" -wyq $METRIC $$
 
 # increment by 1
@@ -597,9 +591,6 @@ verifyNR -1 "Subtracting 21" -w+ $METRIC -21
 verifyNR -1 "Read back" $METRIC
 
 # test on a totally separate metric to test out the 'updated' write() feature
-
-infomsg "Testing the \"updated\" timestamp feature of write()"
-infomsg "(uses a python program not the NR command)"
 
 TPGM="import numerous
 
@@ -634,12 +625,7 @@ metric.crushKillDestroy()
 exit(0)
 "
 
-$PYTHON -c "$TPGM"
-if [ $? -ne 0 ]
-then
-  failout "updated timestamp write test failed"
-fi
-infomsg "Succeeded"
+verifyPython "testing \"updated\" timestamp feature in write()" "" "$TPGM"
 
 # before making an error entry turn off error notifications on the metric
 # There is no NR command for this; have to do with python directly
@@ -716,8 +702,6 @@ TMRparams='{ "private" : true, "kind" : "timer" }'
 doNR -wM +$TMR "$TMRparams"
 TMETRIC=$RESULT
 
-infomsg "created metric $TMETRIC"
-
 DELETE_THESE="$DELETE_THESE $TMETRIC"
 
 # set it to a particular date
@@ -733,8 +717,6 @@ VGMparams='{ "private" : true }'
 
 doNR -wM +$VGM "$VGMparams"
 VGMETRIC=$RESULT
-
-infomsg "created metric $VGMETRIC"
 
 DELETE_THESE="$DELETE_THESE $VGMETRIC"
 
@@ -981,6 +963,20 @@ f.close()
     # may as well keep going but note this failure of course
     EXITSTATUS=1
   fi
+
+  # someone once claimed (tweeted) that doing a metric PUT erased photoURL.
+  # I think they were confused (I've never seen that bug anyway).
+  # We know it erases unspecified parameters (e.g., description) but
+  # it isn't supposed to erase photoURL. Test for that.
+  doNR "$METRIC[photoURL]"
+  PhotoURL="$RESULT"
+  TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+metric.update({'description' : 'blotto'}, overwriteAll=True)
+print(metric.read(dictionary=True)['photoURL'])
+"
+  verifyPython "updating description with overwriteAll" "$PhotoURL" "$TPGM"
 
   # test photo deletion
   doNR --delete -Pq $METRIC
