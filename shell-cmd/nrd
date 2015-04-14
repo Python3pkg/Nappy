@@ -9,20 +9,26 @@
 # options:
 #     -c credspec        as in nr / numerousKey
 #     -m metricspec      see below, can be repeated
+#     -x excludespec     see below, can be repeated
 #     -f fieldspec       fields to display
 #
 # Metric specification:
 #   There are several ways you can tell this what metrics to show.
 #   The simplest is the NRDMETRICS environment variable, which should
-#   be set to a SLASH-separated list of metric names or IDs ('/' is illegal
-#   in metric names and IDs, hence the choice as a separator). Exactly those
-#   metrics will be displayed. Alternatively you can build this list from
-#   the -m command option, giving one or more slash-separated "metricspec"
-#   arguments. All are concatenated so the following are equivalent:
+#   be set to a SLASH-separated list of metric labels or IDs ('/' is illegal
+#   in metric IDs, hence the choice as a separator; if your metric label has
+#   a '/' in it then you will have to use the metric ID for that one).
+#   Exactly those metrics will be displayed. Alternatively you can build this
+#   list from the -m command option, giving one or more slash-separated
+#   "metricspec" args. All are concatenated so the following are equivalent:
 #          -m M1/M2/M3
 #          -m M1 -m M2/M3
 #
 #   If -m is given, NRDMETRICS environment variable is ignored.
+#
+#   You can also exclude some metrics with -x ... same syntax as -m but
+#   the given metrics will NOT be displayed. Using -x with -m at the
+#   same time is legal, but silly.  You can default -x with NRDEXCLUDE.
 #
 # Field specification:
 #   By default the value of a metric is displayed. You can control this
@@ -47,6 +53,7 @@ import time
 parser = argparse.ArgumentParser()
 
 parser.add_argument('-m', '--metrics', action='append')
+parser.add_argument('-x', '--exclude', action='append')
 parser.add_argument('-c', '--credspec')
 parser.add_argument('-f', '--fields', action='append')
 
@@ -74,6 +81,18 @@ if args.metrics:
         for mId in mIDspec.split('/'):
             mIDsRqstd.append(mId)
 
+if not args.exclude:
+    evn = os.environ.get('NRDEXCLUDE', None)
+    if evn:
+         args.exclude = [ evn ]
+
+mIDsExcluded = []
+if args.exclude:
+    for mIDspec in args.exclude:
+        for mId in mIDspec.split('/'):
+            mIDsExcluded.append(mId)
+
+
 #
 # Get all of the metrics you are subscribed to. This is the maximum set of
 # metrics we will display, possibly filtered by the metricsIDsRequested list
@@ -87,7 +106,9 @@ for subs in nr.subscriptions():
     md = m.read(dictionary=True)
 
     # print it if: printing all, or if the ID or name are in the requested list
-    if (not mIDsRqstd) or (mId in mIDsRqstd) or (md['label'] in mIDsRqstd):
+    if ((not mIDsRqstd) or (mId in mIDsRqstd) or (md['label'] in mIDsRqstd)) \
+        and not ((mId in mIDsExcluded) or (md['label'] in mIDsExcluded)):
+
         fs = ""
         for fname in args.fields:
             if fname == 'value':
