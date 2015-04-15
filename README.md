@@ -4,6 +4,8 @@ A python class implementing the [NumerousApp](http://www.numerousapp.com) [APIs]
 
 Available on pip: `pip install numerous`
 
+The source here on github is the current/newest; what you get from pip (pypi) is the stable "released" version and so tends to lag behind the github code. Choose accordingly.
+
 Example code:
 
 ```
@@ -17,6 +19,10 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 ## python versions
 
 Works on both python2 and python3.
+
+## Current changes (in the github source not yet on pip/pypi)
+* Fine grained permissions support
+* Improved subfield/event notation handling in shell-cmd/nr.py
 
 ## New in version 1.5.2
 * catches more network exceptions from requests and converts them into NumerousNetworkError exceptions
