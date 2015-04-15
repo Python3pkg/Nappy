@@ -20,9 +20,12 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 
 Works on both python2 and python3.
 
-## Current changes (in the github source not yet on pip/pypi)
+## New in version 1.6.0
 * Fine grained permissions support
+* Fixed exception raised when multiple matches in metricByLabel
+* Improved debug() function
 * Improved subfield/event notation handling in shell-cmd/nr.py
+* Switched to MIT license (less restrictive than BSD)
 
 ## New in version 1.5.2
 * catches more network exceptions from requests and converts them into NumerousNetworkError exceptions
