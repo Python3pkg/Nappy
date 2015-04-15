@@ -59,6 +59,10 @@ m.read()
 <li>eventDelete</li>
 <li>interaction</li>
 <li>interactionDelete</li>
+<li>permissions</li>
+<li>get_permission</li>
+<li>set_permission</li>
+<li>delete_permission</li>
 <li>label</li>
 <li>webURL</li>
 <li>appURL</li>
@@ -187,8 +191,8 @@ As already noted, raises NumerousMetricConflictError if <code>onlyIf=True</code>
     print("The metric is not valid")
 </code></pre>
 <p>Returns True if the metric is accessible; returns False if the metric cannot be accessed because of problems with the metric's ID (e.g., "Not Found"). Can also raise exceptions for other reasons (e.g., NumerousAuthError if the API key is no good).</p>
-<h3>events() / stream() / interactions() / subscriptions()</h3>
-<p>These are all similar so are all described together here. Each of these four methods is an iterator. They produce the expected items one at a time using a lazy-fetch algorithm to deal with the server's "chunking" API as described in the NumerousApp API documentation.</p>
+<h3>events() / stream() / interactions() / subscriptions() / permissions()</h3>
+<p>These are all similar so are all described together here. Each of these methods is an iterator and produces items one at a time using a lazy-fetch algorithm. The server's "chunking" API as described in the NumerousApp API documentation is handled for you, transparently.</p>
 <p>For example, to compute the average value of a metric that has had many updates done to it:</p>
 <pre><code>n = 0
 total = 0
@@ -203,6 +207,7 @@ print(total/n)
 <li>interactions() - iterator for metric interactions. Interactions are comments, likes, and errors.</li>
 <li>stream() - iterator for the metric stream. The stream is a time-ordered merge of events and interactions.</li>
 <li>subscriptions() - iterator for the metric's subscriptions. </li>
+<li>permissions() - iterator for the metric's permissions collection. Returns one dictionary per permission resource attached to the metric. NOTE: Permissions can be attached to any metric but do not come into effect except for metrics with <code>visibility</code> "private".</li>
 </ul>
 <p>See the NumerousApp API documentation for details about the attributes of each of these types of items.</p>
 <h3>update(dict, overwriteAll=False)</h3>
@@ -216,6 +221,8 @@ print(total/n)
 <pre><code>m.update({ "units" : "blivets" }, overwriteAll=True)
 </code></pre>
 <p>will also have the side effect of deleting any description and setting private to False (and possibly other side effects as defined by the server's rules for metric attribute defaults).</p>
+<p>If the metric has <code>visibility</code> "private" then you must have <code>editMetric</code> permission to perform an update. If you are relying on the read/merge/write feature of this method call you will also need <code>readMetric</code> permission. If you only have <code>editMetric</code> permission without <code>readMetric</code> (which is possible but bizarre) then you will have to use overwriteAll=True or else you will get a Forbidden error since you can't read the metric. Note that the owner of a metric always has all permissions no matter what (translation: you can ignore all this if you are just working with your own metrics).</p>
+
 <h3>like()</h3>
 <p>Example usage:</p>
 <pre><code>likeID = m.like()
@@ -234,6 +241,59 @@ print(total/n)
 <pre><code>cmtID = m.comment("This is the comment")
 </code></pre>
 <p>Creates a "comment" interaction on a metric. Returns the ID of the created interaction.  </p>
+<h3>get_permission(userId=None)</h3>
+<p>Example usage:</p>
+<pre><code>
+# u is some user ID; usually not hard-coded this way of course
+u = '398534503984509802985'
+p = m.get_permission(userId=u)
+if p['readMetric']:
+    print("User has permission to read this metric")
+else:
+    print("User does not have permission to read this metric")
+</code></pre>
+<p>Gets the permission resource for a given user on a given metric. Note that the server enforces metric permissions but only does so for metrics that have their <code>visibility</code> set to "private". It's entirely possible for there to be inoperative permission resources hanging off of a non-private metric.</p>
+<p>There are, as of this writing, four permission fields in a permission resource:</p>
+<ul>
+<li>readMetric
+<li>updateValue
+<li>editMetric
+<li>editPermissions
+</ul>
+<p>See the NumerousAPI documentation for details on their semantics. Generally speaking, readMetric allows someone to read the value of a private metric, updateValue allows someone to write the value, editMetric allows updates to things like description and so forth, and editPermissions is required to grant anyone else permissions on the metric.</p>
+<p>It might be helpful to also read the <a href="shell.html">nr shell command</a> description on how permissions work.</p>
+<p>The owner of a metric always has all permissions, regardless of what any attached permission resource for the owner might say. In other words:</p>
+<pre><code>
+    m.get_permission()
+</code></pre>
+<br>
+which, with the default userId, gets the permission resource for you, is a meaningless thing to do if you are the owner of the metric. 
+<p>A NumerousError exception with code 404 is raised for an attempt to get a permission resource that does not exist for the given user on the given metric.</p>
+<h3>set_permission(perms, userId=None)</h3>
+<p>Example usage:</p>
+<pre><code>
+    # u is some user ID; usually not hard-coded this way of course
+    u = '398534503984509802985'
+    p = { 'readMetric' : True, 'updateValue' : True }
+    m.set_permission(p, userId=u)
+</pre></code>
+<p>This would set up user <code>398534503984509802985</code> with read and write permission on the given metric.</p>
+<p>The <code>userId</code> sent to the server comes either from the passed in permissions dictionary itself OR from the explicit <code>userId</code> argument; the argument (if not None) overrides any userId in the dictionary. If <code>userId</code> is specified in neither the call nor the dictionary then it defaults to <code>me</code> which will be the user associated with the apikey being used to talk to the server.</p>
+<p>NOTE that setting permissions for yourself, if you are the metric owner, "works" (attaches a permission resource) but has no effect. The server will always grant a metric owner full permissions on all metric operations for any metric you own, regardless of what any attached permission resource might say.</p>
+<p>Setting permissions on a metric that does not have <code>visibility</code> set to "private" will "work", in the sense that a resource will be attached and can be retrieved with <code>get_permission</code>; but it has no effect.</p>
+<p>If you do not have permission to set permissions on this metric, a NumerousError with code 403 (Forbidden) will be raised.</p>
+<h3>delete_permission(userId)</h3>
+<p>Example usage:</p>
+<pre><code>
+    # u is some user ID; usually not hard-coded this way of course
+    u = '398534503984509802985'
+    try:
+        m.delete_permission(u)
+    except numerous.NumerousError as e:
+        if e.code != 404:
+            raise
+</code></pre>
+<p>Deletes the permission resource for the given user from the given metric. If there was no permission resource established for the given user, a NumerousError exception with code 404 (Not Found) will be raised. The above code shows how to ignore that as an example (while propagating any other type of error).</p>
 <h3>photo(imgInfo, mimeType="image/jpeg")</h3>
 <p>Example usage:</p>
 <pre><code>mdict = m.photo(open('something.jpg','rb'))    # set user's photo from an opened image file
