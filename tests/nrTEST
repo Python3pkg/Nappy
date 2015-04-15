@@ -969,85 +969,15 @@ else
     doNR EXIT:1 -wq+ -c "$K2" $METRIC 12345  # this way too
     doNR EXIT:1 -wqy -c "$K2" $METRIC 12345  # and this way
 
-    # give the secondary user write permission
-    doNR -wAq ${METRIC}/${USERID_2} '{ "updateValue": true }'
+    # give the secondary user read/write permission
+    doNR -wAq ${METRIC}/${USERID_2} '{ "readMetric" : true, "updateValue": true }'
 
     # try writes again
     verifyNR "888" "writing metric as secondary user" -w -c "$K2" $METRIC 888
     verifyNR "889" "adding to metric as secondary user" -w+ -c "$K2" $METRIC 1
 
-    # the read should still fail... which is kind of amusing
-    verifyNR CONTAINS 403 "reading forbidden metric (have write perm)" EXIT:1 -j -c "$K2" $METRIC
-
-    # oh boy... what this is gonna do is make 250 permission entries
-    # we don't have 250 legitimate user IDs so we just make some up.
-    # This "works" though I'm not sure if it should.
-    doNR -Aq --delete $METRIC '!ALL!'     # first clear out all perms
-    N=250
-    TPGM="import numerous
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-metric = nr.metric($DQ$METRIC$DQ)
-d = { \"readMetric\" : True }
-
-for i in range($N):
-    u = '69696'+str(9000+i)
-    metric.set_permission(d, userId=u)
-"
-
-    infomsg "This next step will take a minute or two... "
-    verifyPython "setting $N permissions" "" "$TPGM"
-
-    # now verify that there are the right number of permission entries
-    VRFY="import numerous
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-metric = nr.metric($DQ$METRIC$DQ)
-n = 0
-
-for x in metric.permissions():
-  n += 1
-
-print(n)
-"
-    verifyPython "checking have $N permissions" "$N" "$VRFY"
-
-    # now change the first 10 of them
-    TPGM="import numerous
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-metric = nr.metric($DQ$METRIC$DQ)
-d = { \"readMetric\" : True, \"updateValue\" : True }
-
-for i in range(10):
-    u = '69696'+str(9000+i)
-    metric.set_permission(d, userId=u)
-"
-
-    verifyPython "modifying some of them" "" "$TPGM"
-
-    # should still have the same number
-    verifyPython "checking still have $N permissions" "$N" "$VRFY"
-
-    # delete the first 100 +/- some random number permissions
-    # and see if we have the right number left
-    # 
-    TPGM="import numerous
-import random
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-metric = nr.metric($DQ$METRIC$DQ)
-n = 95 + random.randrange(10)
-deleted_n = n
-for x in metric.permissions():
-    metric.delete_permission(x['userId'])
-    n -= 1
-    if n == 0:
-        break
-
-n = 0
-for x in metric.permissions():
-    n += 1
-
-print($N - (deleted_n + n))   # should be zero
-"
-    verifyPython "deleting some/counting rest" "0" "$TPGM"
+    # the read should still work
+    verifyNR "889" "reading yet again" -c "$K2" $METRIC
 
 fi
 
