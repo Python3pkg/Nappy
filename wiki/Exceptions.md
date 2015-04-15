@@ -1,10 +1,11 @@
 # Exceptions
 
-Four specific exceptions are defined:
+The following specific exceptions are defined:
 
 * NumerousError. The generic Exception subclass for NumerousAPI errors.
 * NumerousMetricConflictError. Subclass of NumerousError. See NumerousMetric.write()
 * NumerousAuthError. Subclass of NumerousError. For API key problems.
+* NumerousNetworkError. Subclass of NumerousError. For networking failures returned by the underlying `requests` class.
 * NumerousChunkingError. Subclass of NumerousError. Used for some types of iterator errors.
 
 ## NumerousError
@@ -18,6 +19,9 @@ Subclass of `NumerousError`. Raised when you perform a metric `write()` with `on
 
 ## NumerousAuthError
 Subclass of `NumerousError`. Raised whenever the NumerousApp server returns an HTTP 401 code. Usually means your API Key is no good (or has become no good).
+
+## NumerousNetworkError
+Subclass of `NumerousError`. Raised whenever interacting with the NumerousApp server caused a networking-related exception from the `requests` library. Typically this means the server (or your network) is down. The attributes contain the original exception; there's not much (useful) you can do with this other than print it out.
 
 ## NumerousChunkingError
 Subclass of `NumerousError`. Raised from any iterator method when an unexpected server error occurs while fetching any chunk of results other than the first chunk. This error is never "expected" but it can happen if the server returns an error while we are fetching the second or subsequent "chunk" of any type of collection. Essentially this is communicating an iteration that has been interrupted by some server or network error and is therefore incomplete. Note that this is never raised if the _first_ chunk fetch fails (that will raise a NumerousError or possibly a NumerousAuthError) as that indicates bad parameters for the iterator, whereas a failure partway through the chunking protocol indicates some other type of (possibly severe, definitely unexpected) problem.

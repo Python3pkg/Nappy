@@ -1,8 +1,18 @@
 # nr - the shell command
-This command started out very simply and evolved over time into a "do everything" command. I will illustrate what it can do by way of some examples rather than trying to exhaustively document it.
+This command provides shell-level access to almost the entire NumerousApp API. Accordingly it has a huge and overwhelming set of options; however, the basics are fairly straightforward. You can read and write metrics very simply with syntax like this:
+
+    % nr 4961219002925215768
+    17
+
+which is reading the value of a metric given by an ID (e.g., 4961219002925215768 in this case), and:
+
+    % nr -w 4961219002925215768 99
+    99
+
+shows how to write it. These two commands will suffice to integrate almost any application with NumerousApp at the shell level. Many more powerful operations are also possible with this command.
 
 ## Installation
-The file shell-cmd/nr is a simple wrapper and might not even be needed at all depending on how you installed everything. If you installed the numerous.py file using pip (or pip3) so that it is in your system library path then you can delete the "nr" file and rename "nr.py" to "nr" and just use the python file directly.
+The file shell-cmd/nr is a simple wrapper and might not even be needed at all depending on how you installed everything. Its sets PYTHONPATH to the appropriate directory and then invokes nr.py; if you installed the numerous library (numerous.py) using pip (or pip3) so that it is in your system library path then you can delete the "nr" file and rename "nr.py" to "nr" and just use that directly.
 
 If you installed the numerous.py file into your own personal directory tree somewhere (e.g., ~/lib/numerous.py) then you will want to keep the shell wrapper and edit it accordingly. This is all somewhat self-explanatory if you look at the files.
 
@@ -16,37 +26,56 @@ You need a NumerousApp API key to use nr. The best practice is to put that key i
 
 See [APIKey Management](https://github.com/outofmbufs/Nappy/wiki/APIKey-Management) for all the other ways you can specify an API Key.
 
-The examples throughout the rest of this document will omit the "-c ~/.numerousCred" argument. Be aware that you MUST specify your API key somehow, either by the -c argument or by having NUMEROUSAPIKEY set in your environment.
+You can go one step further and set the NUMEROUSAPIKEY environment variable to be that file name so you don't even have to give the -c option, so for example:
+
+    % NUMEROUSAPIKEY=~/.numerousCred export NUMEROUSAPIKEY  # do this once
+    % nr            
+
+The examples throughout the rest of this document will omit the "-c ~/.numerousCred" argument and assume that you either set NUMEROUSAPIKEY or will specify the -c yourself.
 
 ### Metrics by name vs metrics by ID
-The underlying NumerousApp API always accesses metrics by a unique identifier which usually looks like a long string of digits. Of course, humans prefer to access things by name. In NumerousApp the "name" of a metric is actually called its `label`. Labels are not necessarily unique, but usually within the context of a single user's set of metrics they are. The nr command allows you to access metrics by name (label) using the -n option. Thus, to read a metric called 'bozo' you can do this:
+The underlying NumerousApp API always accesses metrics by a unique identifier which usually looks like a long string of digits. These numeric IDs are the true identifiers of a given NumerousApp metric. Of course humans think of the "name" (which is really called a `label` in Numerous) as being the identifier of a metric. However, labels have many problems. Nothing stops you from making three metrics all with the same label. They would each have a different numeric ID but they would be impossible to tell apart from just the label. 
+
+Despite the problems with labels, they are convenient. The nr command allows you to access metrics by name (label) using the -n option. Thus, to read a metric called 'bozo' you can do this:
 
     % nr -n bozo
     17
 
-The `-n` option requires that the label match exactly. It uses the `metricByLabel` option `'STRING'` and it will report an error if there is more than one matching metric. Thus:
+The `-n` option requires that the label match exactly. It uses the `metricByLabel` option `'STRING'` and it will report an error if there is more than one matching metric. Thus if you make more than one metric with a label of `bozo` (you can do this with your phone, for example) and then try to access them with an `nr -n` command:
 
-    % nr -wM +duplicatedBozo 0      # creates a metric
-    % nr -wM +duplicatedBozo 0      # creates a metric
-    % nr -n duplicatedBozo          # will match both metrics
+    % nr -n bozo         # assume we have two metrics with label 'bozo'
 
-will output:
+you would see something like this:
 
-    More than one match:  ['duplicatedBozo', 'duplicatedBozo']
-    ERROR / Invalid Metric: duplicatedBozo    
+    More than one match:  ('bozo', 'bozo')
+    ERROR / Invalid Metric: bozo
 
-The `-N` (capital n) option uses the `metricByLabel` option `'ONE'` so in this case the supplied label name is treated as an _unanchored_ regexp. Note that this means it matches if the supplied argument appears anywhere in any label. Thus:
+If you have a very long label and don't want to have to type the whole thing, the nr command will do regular expression matching for you if you use the `-N` (capital N) option. In this case the string you give will be treated as an unanchored regular expression and the nr command will attempt to match it against all of the metrics that you are subscribed to.
+
+So, for example, if you are subscribed to a metric "Austin Plaza Lofts Packet Drop" you could try this:
+
+    % nr -N "Plaza"
+    .008
+
+and get the current reading of that metric, assuming that only one metric matched. The `-N` (capital n) option uses the `metricByLabel` option `'ONE'` so in this case the supplied label name is treated as an _unanchored_ regexp. Note that this means it matches if the supplied argument appears anywhere in any label. Thus:
 
     % nr -N e
 
-will match any label of any metric of yours that happens to have the letter 'e' in it (and will most likely fail with a duplicate-match error of course).
+will match any label of any metric of yours that happens to have the letter 'e' in it (and will most likely fail with a duplicate-match error of course). You can use the full set of regular expression constructs; the most useful are probably ".*" to match any characters, "^" to match the beginning and "$" to match the end. Thus:
 
-As a convenient way to get a translation of metric names (labels) into IDs, specifying -n (or -N) by itself will list all of your metrics and their corresponding labels:
+    % nr -N "^A.*p$"
+    .008
+
+would likely also match "Austin Plaza Lofts Packet Drop" as shown.
+
+If you are writing scripts it is strongly recommended that you use numeric IDs to access your metrics. As a convenient way to get a translation of metric names (labels) into IDs, specifying -n by itself will list all of your metrics and their corresponding labels:
 
     % nr -n
     579875221157343692 bozo
     2141579335528632068 A Random Number
     9208972516053673667 Crude Oil
+
+For convenience/completeness "nr -N" does the exact same thing (it does not matter whether you specify lower case n or upper case N if there are no other arguments).
 
 ### Reading a metric
 Simply specify the metric ID or use -n and specify a label:
@@ -74,7 +103,7 @@ It turns out that `-n` will simply pass your "name" (label) to the NumerousApp s
 
 However this is somewhat susceptible to confusion if you (foolishly) define a metric with a label that matches some other metric's ID. So don't do both of those things (i.e., either don't define metric labels that match some other metric's ID, or don't mix/match labels and IDs while using `-n`). 
 
-The "nr" command allows you to request print out of a specific attribute when you read a metric so another way to translate a name (label) into an ID is:
+The "nr" command allows you to display a specific attribute when you read a metric so another way to translate a name (label) into an ID is:
 
     % nr -n 'bozo[id]'
     579875221157343692
@@ -93,6 +122,8 @@ which shows the wisdom of being in the habit of using quotes:
 
     % nr -n 'A Random Number[id]'
     2141579335528632068
+
+If your metric uses square brackets in its label you are out of luck. There is no escape mechanism for preventing the "nr" command from interpreting the square bracket notation as a field reference. Use the numeric ID to access such a metric, or try games with "-N" and regular expressions.
 
 The square bracket feature is especially useful to find the web URL of a metric:
 
@@ -214,7 +245,7 @@ If your metric is a timer you can write a date/time to it using this syntax:
 The syntax is the string "EPOCHTIME: " followed by `mm/dd/yyyy hh:mm:ss` which will be converted into a seconds-since-time-zero Unix timestamp as required by the Numerous server. You can use this syntax to write any metric whether it is a timer or not; the date is converted into a floating point number as shown.
 
 ### Updating metric attributes
-To update the attributes of a metric we use the -M option combined with -w. In general every `nr` operation that writes something requires the `-w` flag, so think of the `-M` flag in this case as specifying "what to write" while the `-w` flag is simply specifying that we are going to write _something_.
+To update the attributes of a metric use the -M option combined with -w. In general every `nr` operation that writes something requires the `-w` flag, so think of the `-M` flag in this case as specifying "what to write" while the `-w` flag is simply specifying that we are going to write _something_.
 
     % nr -wMn bozo '{ "description" : "has red hair" }'
     { ... json output of updated metric attributes }
@@ -260,6 +291,14 @@ So, for example:
 
 It is not possible to specify an initial value and `private` at the same time using these shorthands; you must give a JSON attribute dictionary in that case.
 
+Please note well that `private` is setting the attribute "private" to true for you. If you are trying to use fine-grained permissions you must set the attribute "visibility" to "private", which is an entirely different thing altogether. Here is how you would set up a brand new metric `ptest` for use with fine-grained permissions:
+
+    % nr -wM +ptest '{ "visibility" : "private" }'
+
+You could, of course, initialize other parameters in that command as well, e.g.:
+
+    % nr -wM +ptest '{ "visibility" : "private", "description" : "perms test" }'
+
 You can create any type of metric but you will have to use the JSON attributes format. So, for example, you can create a timer metric this way:
 
     % nr -wM +newTimer '{ "kind":"timer", "value":"EPOCHTIME: 02/19/1999 11:05:53" }'
@@ -282,7 +321,7 @@ You read interactions using -I and write them using -wI:
     like 3457529302618327156 None 2015-01-12T14:26:04.618Z 7180748783917522265 -- None
     like 6434586778323266772 None 2015-01-12T14:25:57.237Z 7180748783917522265 -- None
 
-If you plan to do anything programmatic with this output I strongly suggest you use the JSON form and parse it accordingly:
+If you plan to do anything programmatic with this output the best practice is to use the JSON form and parse it accordingly:
 
     % nr -nIj bozo
     { "Results": ... output elided }
@@ -331,7 +370,7 @@ You can delete events and interactions by their event or interaction ID respecti
 For example if '9118113586950422173' is an event ID in the metric bozo then:
 
     % nr -En --delete bozo 9118113586950422173
-    579875221157343692[9118113586950422173] -- DELETED
+    579875221157343692/9118113586950422173 -- Deleted
 
 deletes that event. You have to know if you are deleting an event (`--delete -E`) or an interaction (`--delete -I`); this is just how the NumerousApp API works. 
 
@@ -397,6 +436,56 @@ The `serverResponseTimes` reports the last ten server on-the-wire delays in seco
 The `serverRequests` value is the number of actual HTTP interactions sent to the server.
 
 See the source code in `numerous.py` to understand what the rest of these mean. In particular the `--statistics` option is most useful for determining whether or not the throttle code has been called.
+
+### Fine-Grained Permissions
+If you create a metric with `visibility` "private" then no one other than you can access the metric in any way. This remains true even if they obtain the metric ID. The metric attribute `visibility` is more powerful than the metric attribute `private`. The `private` attribute simply controls whether the metric can be found via search functions or not. A metric that has `private` true can still be read by anyone who knows its ID, whereas a metric that has `visibility` "private" can only be read by the owner and by those who have been granted explicit fine-grained permissions. This terminology is, unfortunately, a bit confusing.
+
+Thus, for example:
+
+    % nr -wM +Public_Read_AND_Write '{ "private" : false, "writeable" : true }'
+
+creates a metric called "Public_Read_AND_Write" that can be read or written by ANYONE in the NumerousApp world. It can be found in the "search for numbers" feature of the various apps. It is a very public metric.
+
+This:
+
+    % nr -wM +Public_ReadOnly '{ "private" : false }'
+
+creates a metric called "Public_ReadOnly" that can be read by ANYONE, can be found in "search for numbers", but can only be written by you. ("writeable" defaults to false).
+
+This:
+
+    % nr -wM +Unlisted_Read_AND_Write '{ "private" : true, "writeable" : true }'
+
+creates a metric called "Unlisted_Read_AND_Write" that can be read or written by ANYONE in the NumerousApp world; however, it is not listed and can't be found using the search functions. Therefore, before anyone can read or write it they have to find out its ID somehow (usually by you explicitly telling it to them, usually using the sharing function in the app). The secrecy of the ID is the entire security of this metric; once people start learning and sharing the ID of this metric the "secret" is out and anyone who gets that ID can access this metric.
+
+Fine-grained permissions provide more control over all this. To use them you have to set the `visibility` parameter on a metric to "private", for example:
+
+    % nr -wM +SecureMetric '{ "visibility" : "private" }'
+
+This creates a metric called "SecureMetric" that can only be accessed by you (the metric owner). Access by anyone else is controlled by explicit permissions. See the NumerousApp API documentation for details on these permissions, but a few examples here will illustrate the basics.
+
+If I have another user I want to allow to read this metric, I must know their userId which is a numeric string of digits. There are a variety of ways to discover that ID. Once you have it, you create a permissions resource on the given metric to set the specific level of authority you want to grant that user (for this metric). With the `nr` command you do that with the `-A` option, using a syntax that looks like this:
+
+    % nr -n -w -A SecureMetric/853094853098452 '{ "readMetric" : true, "updateValue" : true }'
+
+where `853094853098452` is the userId. The syntax is {metricID}/{userID} and {metricID} is either numeric or, as in the example above, can be a label if the `-n` option is also used. The second argument is a JSON representation of the permissions resource, with the attributes as described in the NumerousApp API documentation. The two most useful attributes are `readMetric` which allows reading the value of the metric (and viewing the event and interaction streams) and `updateValue` which allows writing the value of the metric (but not editing other metric parameters).
+
+To see the permissions on a given metric just use `-A` by itself:
+
+    % nr -n -A SecureMetric
+    853094853098452 on 6366750873739623617: readMetric updateValue
+
+The example output is "userID on metricID: " followed by a list of permissions that that user has on the metric. You can also (possibly more usefully) view these resources in json format using `-j`:
+
+    % nr -njA SecureMetric
+     ... json output would be here ...
+
+To delete a specific permission resource from a metric use the `--delete` option (there is no single-letter form of this) like this:
+
+    % nr -n -A --delete SecureMetric 853094853098452
+
+which requests that the permission resource associated with userID 853094853098452 be deleted from metric SecureMetric.
+
 
 ### More
 Still not yet documented; read the shell script source: photos, users, subscriptions, stream...
