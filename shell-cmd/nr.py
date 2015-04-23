@@ -13,7 +13,9 @@ from numerous import Numerous, numerousKey, \
 
 #
 # usage
-#  nr [ -c credspec ] [ -t limit ] [-D] [-jknNqw+/ISEMPBA] [-y] [ m1 [v1] ]...
+#  nr [ -c credspec ] [ -t limit ] [-D] [-jknNqwy+/ABEIMPS] [ m1 [v1] ]...
+#         additional options: [ --ensurerate ] [ -R ]
+#
 #  nr [ -c credspec ] [-Dnq] -I --delete m1 interaction1 ...
 #  nr [ -c credspec ] [-Dnq] -E --delete m1 event1 ...
 #  nr [ -c credspec ] [-Dnq] -P --delete m1 ...
@@ -22,6 +24,7 @@ from numerous import Numerous, numerousKey, \
 #  nr [ -c credspec ] [-Dqj][-U]
 #  nr [ -c credspec ] [-Dqj][-UPw] photo-file
 #  nr -V
+#  nr -RR
 #
 # Perform Numerous operations on metrics
 #
@@ -350,10 +353,10 @@ from numerous import Numerous, numerousKey, \
 #       nr -A '34552988823401/66178735[readMetric]'
 #
 #     Delete user 66178735's permissions on a metric:
-#       nr -A --delete '34552988823401 66178735'
+#       nr -A --delete 34552988823401 66178735
 #
 #     This form allows deleting ALL permissions on a metric (be careful!):
-#       nr -A --delete '34552988823401' !ALL!
+#       nr -A --delete 34552988823401 '!ALL!'
 #
 
 
@@ -573,7 +576,7 @@ if args.ratelimits > 0 or args.ensurerate > 0:
     elif not bequiet:
         print("Remaining APIs: {}. New allocation in {} seconds.".format(remain,refresh))
 
-    if args.ratelimits > 1:   # XXX haha, as a hack -RR means just do this then exit
+    if args.ratelimits > 1:   # -RR means just do this then exit
         exit(0)
 
 # this throttle function implements retries on HTTP errors 500/504
@@ -702,6 +705,7 @@ def valueParser(s):
             rval = s
     else:
         rval = tval
+        tval = -1
 
     return (rval, tval)
 
@@ -1101,7 +1105,7 @@ def mainCommandProcessing(nr, args):
                     # if you specified it naked, it's just the value or "private"
                     if '__naked__' in jval:
                         vp = jval.pop('__naked__')
-                        if vp == "private":
+                        if vp[0] == "private":
                             jval['private'] = True
                             jval['value'] = 0    # this is implied by API anyway
                         else:
