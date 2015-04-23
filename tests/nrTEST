@@ -504,10 +504,12 @@ MVAL=999
 Mparams="{ \"private\" : true, \"value\" : $MVAL }"
 
 
-doNR -wM +$M "$Mparams"
+doNR -wM +$M private
 METRIC=$RESULT
 
 DELETE_THESE="$DELETE_THESE $METRIC"
+
+doNR -w $METRIC $MVAL
 
 # see if it got created with the correct privacy and value
 verifyNR $MVAL "Wrong initial value" $METRIC
@@ -741,9 +743,13 @@ DELETE_THESE="$DELETE_THESE $TMETRIC"
 # set it to a particular date
 doNR -wq $TMETRIC "EPOCHTIME: 1/15/2011"   # nephew's birthday :)
 
-# I don't really have a good way to test that the date got set correctly.
-# Well, I could, but I'm too lazy to write all that shell code. So we're
-# just happy here if the date conversion above didn't blow up. Declare victory.
+# I precomputed this to match the above
+verifyNR 1295071200.0 "EPOCHTIME date read back" $TMETRIC
+
+# another date test .. there was a bug that only showed up on dates
+# in the future (it was obscure!) so do one of those
+doNR -wq $TMETRIC "EPOCHTIME: 1/15/2050"
+verifyNR 2525839200.0 "Future EPOCHTIME read back" $TMETRIC
 
 # make another "virgin" metric to bang on
 VGM=nrVGTEST$$
@@ -905,20 +911,8 @@ infomsg "My user ID is $USERID_ME (userName: $USERNAME_ME)"
 # set the test metric to visibility private, which enables fine-grained perms
 doNR -wMq $METRIC '{ "visibility" : "private" }'
 
-# permissions collection should be empty
-verifyNR "" "permissions collection" -A $METRIC
-
-# set all the permissions for ourselves.
-# This is actually a no-op because permissions don't apply to the metric 
-# owner; I wonder if it might become disallowed by the server some day.
-
-doNR -wAq ${METRIC}/${USERID_ME} '{ "readMetric": true, "editPermissions": true, "editMetric": true, "updateValue": true}'
-
-# verify that those permissions got set
-for P in readMetric editPermissions editMetric updateValue
-do
-  verifyNR "True" "Checking $P" -A "${METRIC}[$P]"
-done
+# permissions collection should be just the default (all perms) for us
+verifyNR "$USERID_ME on $METRIC: readMetric updateValue editPermissions editMetric " "permissions collection" -A $METRIC
 
 # if we have an alternate ID try that out.
 # First off the alternate ID should not be able to read it right now
