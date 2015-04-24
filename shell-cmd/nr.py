@@ -148,7 +148,11 @@ from numerous import Numerous, numerousKey, \
 #              pointing out the argument must be one "word")
 # then the value written to the metric will be the given date converted
 # into epochtime (UNIX "seconds since 1970"). This is what you want when
-# updating a "timer" type of metric.
+# updating a "timer" type of metric. This syntax also allows one special form:
+#       "EPOCHTIME: now"
+#
+# in which case the current system time will be used.
+#
 #
 # If you are writing a metric value and you format the "value" like this:
 #            "1234 @ mm/dd/yy hh:mm:ss"
@@ -633,7 +637,8 @@ except NumerousError as x:
 #
 #   2) Implement syntax for certain special circumstances:
 #       * value@timestamp for setting "updated" times in write()s
-#       * EPOCHTIME: mm/dd/yy hh:mm:ss for "timer" metrics
+#       * EPOCHTIME: mm/dd/yy hh:mm:ss -- for "timer" metrics
+#       * EPOCHTIME: now               -- for "timer" metrics
 #
 
 
@@ -656,12 +661,13 @@ def valueParser(s):
 
     tval = -1
     if ts:               # we have an EPOCHTIME: or an '@' form
-        sx = ts[len(EpochTimeSyntax):].lstrip(' ')    # the rest of s
+        sx = ts[len(EpochTimeSyntax):].strip()    # the rest of s
 
         # these are all the formats we'll try for converting a date stamp
         # personally I don't recommend you use the ones omitting the full
         # time but it's up to you
         dateformats = [
+           # NOTE: ADD NEW ONES AT END; the [0]'th is used below explicitly
              "%m/%d/%Y %H:%M:%S",          # four digit year
              "%m/%d/%y %H:%M:%S",          # two digit year
              "%m/%d/%Y %H:%M",             # seconds omitted (yyyy)
@@ -669,6 +675,10 @@ def valueParser(s):
              "%m/%d/%Y",                   # time completely omitted (yyyy)
              "%m/%d/%y"
         ]
+
+        # kinda hokey, but easy
+        if sx == "now":
+            sx = time.strftime(dateformats[0])
 
         # try first mm/dd/yyyy then mm/dd/yy .. could add more formats too
         for fmt in dateformats:
