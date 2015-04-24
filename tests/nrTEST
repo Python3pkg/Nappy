@@ -415,11 +415,15 @@ verifyNR() {
   fi
 }
 
-verifyPython() {
+doPython() {
   echo "TESTING::: $PYTHON -c [ ... $1 ]"
-  $PYTHON -c "$3" > $TMPFILE
+  $PYTHON -c "$2" > $TMPFILE
   if [ $? -ne 0 ]; then failout "non-zero exit from python"; fi
   RESULT=`cat $TMPFILE`
+}
+
+verifyPython() {
+  doPython "$1" "$3"
   if [ "x$RESULT" != "x$2" ]; then failout "expected: $2, got $RESULT"; fi
 }
 
@@ -469,6 +473,18 @@ print(d['Results']["$2"]['result']['"$3"'])
 "
 
   RESULT=`$PYTHON -c "$JPGM" "$1"`
+}
+
+# unsubscribe entirely from the specified metric ID $1
+unsubscribe_metric() {
+    UPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$1$DQ)
+sb = { 'notificationsEnabled' : False }
+metric.subscribe(sb)
+"
+
+    verifyPython "unsubscribing from metric $1" "" "$UPGM"
 }
 
 
@@ -666,16 +682,7 @@ verifyPython "testing \"updated\" timestamp feature in write()" "" "$TPGM"
 # before making an error entry turn off error notifications on the metric
 # There is no NR command for this; have to do with python directly
 # NOTE: also implicitly (and lightly) testing the subscription methods
-PPGM="import numerous
-nr = numerous.Numerous(apiKey=\"$APIKEY\")
-metric = nr.metric($DQ$METRIC$DQ)
-
-sb = { 'notifyOnError' : False }
-metric.subscribe(sb)
-"
-
-infomsg "Turning off notifyOnError via subscribe()"
-$PYTHON -c "$PPGM"
+unsubscribe_metric $METRIC
 
 # try making an error entry
 ErrString="This is the error info"
@@ -737,8 +744,9 @@ TMRparams='{ "private" : true, "kind" : "timer" }'
 
 doNR -wM +$TMR "$TMRparams"
 TMETRIC=$RESULT
-
 DELETE_THESE="$DELETE_THESE $TMETRIC"
+
+unsubscribe_metric $TMETRIC     # otherwise you might get pinged during test
 
 # set it to a particular date
 doNR -wq $TMETRIC "EPOCHTIME: 1/15/2011"   # nephew's birthday :)
@@ -750,6 +758,28 @@ verifyNR 1295071200.0 "EPOCHTIME date read back" $TMETRIC
 # in the future (it was obscure!) so do one of those
 doNR -wq $TMETRIC "EPOCHTIME: 1/15/2050"
 verifyNR 2525839200.0 "Future EPOCHTIME read back" $TMETRIC
+
+# try setting it to now
+doNR -w $TMETRIC "EPOCHTIME:now"
+TMNOW="$RESULT"
+
+# this python program will output the number of seconds between "now"
+# and the metric value we just set ... that should be fairly small
+TPGM="import time
+
+print(int(time.time() - $TMNOW))
+"
+doPython "checking EPOCHTIME:now value" "$TPGM"
+
+# above one minute difference we're definitely calling a failure
+# NOTE: don't run these tests on a machine so loaded down this fails (duh)
+if [ $RESULT -gt 60 ]
+then
+    failout "Difference between EPOCHTIME:now and now is too large"
+elif [ $RESULT -gt 5 ]
+then
+    infomsg "Difference between EPOCHTIME:now and now is $RESULT"
+fi
 
 # make another "virgin" metric to bang on
 VGM=nrVGTEST$$
