@@ -1119,7 +1119,7 @@ def mainCommandProcessing(nr, args):
                             jval['private'] = True
                             jval['value'] = 0    # this is implied by API anyway
                         else:
-                            jval['value'] = vp
+                            jval['value'] = vp[0]
                     elif 'value' in jval:
                         # allow for EPOCHTIME: in value here
                         jval['value'] = valueParser(jval['value'])[0]
