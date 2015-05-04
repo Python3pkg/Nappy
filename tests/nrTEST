@@ -480,11 +480,18 @@ unsubscribe_metric() {
     UPGM="import numerous
 nr = numerous.Numerous(apiKey=\"$APIKEY\")
 metric = nr.metric($DQ$1$DQ)
-sb = { 'notificationsEnabled' : False }
+# just notificationsEnabled by itself should have been enough
+# but timer metrics seem to need notifyWhenBelowSet too ... might
+# be a server bug. There seems to be a timing issue at work with that too.
+# In any case, turning both off works...
+sb = { 'notificationsEnabled' : False, 'notifyWhenBelowSet' : False }
 metric.subscribe(sb)
 "
 
-    verifyPython "unsubscribing from metric $1" "" "$UPGM"
+# we have a nr command for this now so ...
+#    verifyPython "unsubscribing from metric $1" "" "$UPGM"
+# instead do this:
+    verifyNR "" "Unsubscribing from $1" --delete -Bq "$1"
 }
 
 
@@ -544,7 +551,7 @@ M777=$RESULT
 verifyNR 777 "Checking 777 value" $M777
 
 # don't need this metric hanging around
-doNR --killm $M777
+doNR --killmetric $M777
 
 # testing a variety of other ID forms we need to use python to get at them
 infomsg "Testing a variety of ID forms in nr.metric() constructor"
@@ -650,6 +657,12 @@ verifyNR 20 "Adding 3" -w+ $METRIC 3
 verifyNR -1 "Subtracting 21" -w+ $METRIC -21
 verifyNR -1 "Read back" $METRIC
 
+# a couple of quick tests of subscription functions
+# inspired by old (now-fixed) bugs
+                              # by name without -n, on purpose to test error
+verifyNR "" "-B exception" EXIT:1 -Bq $M 
+verifyNR "False" "Checking notifyOnAnyChange" -B "${METRIC}[notifyOnAnyChange]"
+
 # test on a totally separate metric to test out the 'updated' write() feature
 
 TPGM="import numerous
@@ -691,10 +704,6 @@ verifyPython "testing \"updated\" timestamp feature in write()" "" "$TPGM"
 # There is no NR command for this; have to do with python directly
 # NOTE: also implicitly (and lightly) testing the subscription methods
 unsubscribe_metric $METRIC
-
-# it can take a moment for the unsubscription to propagate; this is hokey
-# but so be it ...
-sleep 5
 
 # try making an error entry
 ErrString="This is the error info"
@@ -759,9 +768,6 @@ TMETRIC=$RESULT
 DELETE_THESE="$DELETE_THESE $TMETRIC"
 
 unsubscribe_metric $TMETRIC     # otherwise you might get pinged during test
-# it can take a moment for the unsubscription to propagate; this is hokey
-# but so be it ...
-sleep 5
 
 
 # set it to a particular date

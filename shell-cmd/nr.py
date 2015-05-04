@@ -174,8 +174,7 @@ from numerous import Numerous, numerousKey, \
 #           the metrics you are subscribed to (have put into your display) in the App.
 #
 #         * Otherwise the subscription parameters on a particular
-#           metric(s) are read. NOTE: It is not currently possible to write
-#           subscriptions from this command (not yet implemented)
+#           metric(s) are read.
 #
 #      -E (--event) : the events will be read.
 #         Events are value changes.
@@ -422,23 +421,34 @@ if not (args.event or args.perms or args.interaction):
 #   ... could have just ignored, but it seems best to make sure that what
 #       you specified makes total sense (especially before deleting something)
 #
-# and it requires either --event or --interaction or --photo
+# and it requires --event, --interaction, --subscriptions, --perms, or --photo
 #
 if args.delete:
     nope = { "write", "plus", "stream", "metric", "onlyIf", "user",
-             "key", "subs", "killmetric" }
+             "key", "killmetric" }
+    musthaveone = { "event", "interaction", "photo", "subs", "perms" }
     argsDict = vars(args)
     bad = False
     for x in nope:
         if argsDict.get(x):
             print("Can't have --delete and --" + x)
             bad = True
+
+    gotOne = None
+    for x in musthaveone:
+        if argsDict.get(x):
+            if gotOne:
+                print("Can only have one of {}, {} with --delete".format(x, gotOne))
+                bad = True
+            gotOne = x
+
+    if not gotOne:
+        print("--delete requires one of: {}".format(argsDict.keys()))
+        bad = True
+
     if bad:
         exit(1)
-
-    if not (args.event or args.interaction or args.photo or args.perms):
-        print("--delete requires -E/--event, -I/--interaction, -A/--permissions, or -P/--photo")
-        exit(1)
+ 
 
 
 # --user has similar (but not quite the same) exclusion rules
@@ -876,7 +886,7 @@ def mainCommandProcessing(nr, args):
     #
     # Sometimes it is m1 v1 pairs sometimes just metrics
     #
-    if args.write or (args.delete and not args.photo):
+    if args.write or (args.delete and not (args.photo or args.subs)):
         xm = args.keyvals[0::2]
         values = args.keyvals[1::2]
 
@@ -1023,6 +1033,9 @@ def mainCommandProcessing(nr, args):
                 if args.photo:
                     delWhat = None
                     r['delID'] = "photo"
+                elif args.subs:
+                    delWhat = None
+                    r['delID'] = "subscription"
                 else:
                     delWhat = values.pop(0)
                     r['delID'] = delWhat
@@ -1033,6 +1046,14 @@ def mainCommandProcessing(nr, args):
                         metric.interactionDelete(delWhat)
                     elif args.photo:
                         metric.photoDelete()
+                    elif args.subs:
+                        # "deleting" a subscription means turning off
+                        # all notifications, which we do somewhat generalized:
+                        s = metric.subscription()
+                        for k in s.keys():
+                            if k.startswith('notif') and s[k] == True:
+                                s[k] = False
+                        metric.subscribe(s)
                     elif args.perms:
                         if delWhat == '!ALL!':
                             for x in metric.permissions():
@@ -1044,7 +1065,7 @@ def mainCommandProcessing(nr, args):
                     r['result'] = " Deleted"
                 except NumerousError as v:
                     exitStatus = 1
-                    r['result'] = "ERROR / Not Found"
+                    r['result'] = "ERROR / Not Found (" + v.reason + ")"
 
             elif args.write and args.photo:
                 # the matching value given is (should be) a file name
