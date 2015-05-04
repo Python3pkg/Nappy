@@ -1220,7 +1220,7 @@ def mainCommandProcessing(nr, args):
                             r['result'] = findSomethingSomewhere(d, mspec[mspecFIELDKey])
                         else:
                             r['result'] = d
-                except NumerousError:
+                except NumerousError as e:
                     exitStatus = 1
                     if args.json:
                         r['result'] = { "NumerousError" : { "code" : e.code, "reason" : e.reason }}
