@@ -488,7 +488,7 @@ sb = { 'notificationsEnabled' : False, 'notifyWhenBelowSet' : False }
 metric.subscribe(sb)
 "
 
-# we have a nr command for this now so ...
+# we have a nr command for this now so ... we no longer do this:
 #    verifyPython "unsubscribing from metric $1" "" "$UPGM"
 # instead do this:
     verifyNR "" "Unsubscribing from $1" --delete -Bq "$1"
@@ -701,8 +701,6 @@ exit(0)
 verifyPython "testing \"updated\" timestamp feature in write()" "" "$TPGM"
 
 # before making an error entry turn off error notifications on the metric
-# There is no NR command for this; have to do with python directly
-# NOTE: also implicitly (and lightly) testing the subscription methods
 unsubscribe_metric $METRIC
 
 # try making an error entry

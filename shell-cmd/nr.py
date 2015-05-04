@@ -102,7 +102,12 @@ from numerous import Numerous, numerousKey, \
 #        The userId can be contained in the JSON instead of the / notation;
 #        if it is in both the / notation one takes precedence. That can be
 #        useful for duplicating for multiple users from a template.
-#
+#     -B (--subscriptions) : subscription is written.
+#        The subscription value should be a valid JSON subscription dictionary.
+#        Any values you don't specify will be merged with the values from
+#        your current subscription.
+#        PAY ATTENTION: JSON not PYTHON DICT STRING. This trips people
+#        up with True vs true (use true)
 #     -M (--metric) : a metric is CREATED or UPDATED.
 #        To create a metric, the name (m1) MUST begin with a '+' which
 #        will be stripped ("+NewName" becomes "NewName"). The "-n" flag
@@ -254,6 +259,10 @@ from numerous import Numerous, numerousKey, \
 # (single letter) flavor of --delete on purpose. Specify -I to delete
 # an interaction or -E to delete an event, and give the metric ID and item ID
 # There is no "val" for --delete --P
+#
+# Permissions can be deleted (--delete -A) and your subscription
+# to a metric can be deleted (--delete -B).
+#
 #
 # Lastly, the metric itself can be deleted but to avoid mistakes with --delete
 # causing misery this is done with --killmetric. The syntax is:
@@ -1078,36 +1087,45 @@ def mainCommandProcessing(nr, args):
                 # to simplify the rest of this turn it into something
                 # that is ALWAYS a dictionary, but if it was naked we
                 # put the "val" in as '__naked__' key
+                naked = '__naked__'
                 try:
                     jval = json.loads(val)
                     # this test serves two purposes: see if it is dict-like,
                     # and protect our __naked__ hack
-                    if '__naked__' in jval:
+                    if naked in jval:
                         # seriously, you are a twit...
                         print("Invalid Numerous JSON given: ", val)
                         exit(1)
                 except (TypeError, ValueError):
                     # it was naked, or malformed.
                     try:
-                        jval = { '__naked__' : valueParser(val) }
+                        jval = { naked : valueParser(val) }
                     except ValueError:     # e.g., "EPOCHTIME: " bad format
-                        jval = { '__naked__' : val }  # this will get dealt with below
+                        jval = { naked : val }  # this will get dealt with below
 
                 if args.perms:
-                     if '__naked__' in jval:
+                     if naked in jval:
                          r['result'] = "Permissions must be JSON format: " + val
                          exitStatus = 1
                      else:
                          u = r.get('ID2', None)
                          r['result'] = metric.set_permission(jval, userId=u)
 
+                elif args.subs:
+                     # you write a subscription as json updated parms.
+                     # Nudity is not allowed.
+                     if naked in jval:
+                         r['result'] = "Subscriptions must be JSON format: " + val
+                         exitStatus = 1
+                     else:
+                         r['result'] = metric.subscribe(jval)
                 elif args.interaction:
                     # interactions are comments/likes/errors
                     # if you specify a naked string it's a comment
                     # you specify the other forms (or comments if you like)
                     # as a JSON. Figure out what's going on ... then do it
 
-                    if '__naked__' in jval:
+                    if naked in jval:
                         j = { 'kind': "comment", 'commentBody' : val }
                     else:
                         j = jval
@@ -1126,7 +1144,7 @@ def mainCommandProcessing(nr, args):
                     #       you cannot update the value parameter this way
                     #       (server will ignore any 'value' in the json)
                     # We don't implement any naked shortcut; val MUST be JSON
-                    if '__naked__' in jval:
+                    if naked in jval:
                         r['result'] = "Update requires JSON for parameters"
                         exitStatus = 1
                     else:
@@ -1134,8 +1152,8 @@ def mainCommandProcessing(nr, args):
 
                 elif creatingNew:
                     # if you specified it naked, it's just the value or "private"
-                    if '__naked__' in jval:
-                        vp = jval.pop('__naked__')
+                    if naked in jval:
+                        vp = jval.pop(naked)
                         if vp[0] == "private":
                             jval['private'] = True
                             jval['value'] = 0    # this is implied by API anyway
