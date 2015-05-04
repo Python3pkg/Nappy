@@ -538,6 +538,14 @@ verifyNR $MVAL "Reading via $RESULT" $RESULT
 doNR $METRIC'[web]'
 verifyNR $MVAL "Reading via $RESULT" $RESULT
 
+# test the "set the value naked" method of metric creation
+doNR -wM +$M 777
+M777=$RESULT
+verifyNR 777 "Checking 777 value" $M777
+
+# don't need this metric hanging around
+doNR --killm $M777
+
 # testing a variety of other ID forms we need to use python to get at them
 infomsg "Testing a variety of ID forms in nr.metric() constructor"
 for ID in \
@@ -684,6 +692,10 @@ verifyPython "testing \"updated\" timestamp feature in write()" "" "$TPGM"
 # NOTE: also implicitly (and lightly) testing the subscription methods
 unsubscribe_metric $METRIC
 
+# it can take a moment for the unsubscription to propagate; this is hokey
+# but so be it ...
+sleep 5
+
 # try making an error entry
 ErrString="This is the error info"
 ErrInfo="{ \"kind\": \"error\", \"commentBody\": \"$ErrString\" }"
@@ -747,6 +759,10 @@ TMETRIC=$RESULT
 DELETE_THESE="$DELETE_THESE $TMETRIC"
 
 unsubscribe_metric $TMETRIC     # otherwise you might get pinged during test
+# it can take a moment for the unsubscription to propagate; this is hokey
+# but so be it ...
+sleep 5
+
 
 # set it to a particular date
 doNR -wq $TMETRIC "EPOCHTIME: 1/15/2011"   # nephew's birthday :)
