@@ -36,7 +36,7 @@ nr = Numerous()
 <p>Any API that communicates with the server can raise these specific Exceptions:
 <em> NumerousAuthError: Authentication failure. Likely cause: API key is (or has become) no good.
 </em> NumerousError: Any other server error including HTTP failures.</p>
-<p>Other Exceptions are also possible, especially various lower-level exceptions you might see from network libraries if you lose network connectivity.</p>
+<p>The library attempts to catch lower-level network exceptions and turn them into a NumerousError, so catching NumerousError should be sufficient if you want to know about network problems.</p>
 <h3>metric(metricId)</h3>
 <p>Example usage:</p>
 <pre><code># nr is a Numerous() 
@@ -157,9 +157,8 @@ for s in nr.subscriptions(userId='3479283572920175101'):
 nr = Numerous()     # gets credential information from NUMEROUSAPIKEY environment variable
 
 for s in nr.subscriptions():
-    m = nr.metric(s['metricId'])
-    mDict = m.read(dictionary=True)         # get the entire dictionary of the metric
-    print(mDict['label'], mDict['value'])   # really should do more formatting
+    m = nr.metric(s)
+    print(m['label'], m['value'])
 </code></pre>
 <p>As described in the API documentation, the server may return your subscriptions in multiple "chunks" if you have a lot of them. The subscriptions() method performs lazy fetching as needed. No call to the server is made until you request the first subscription from the iterator, and subsequent chunks (if any) are not fetched until you iterate past the subscriptions that were returned in the first chunk. All of this is handled transparently inside the <code>subscription()</code> method.</p>
 <p>Additional specific Exceptions:
@@ -188,7 +187,6 @@ nr.ping()
 except NumerousError as e:
     print("Cannot contact server. Reason: {}".format(e.reason))
 </code></pre>
-<p>Strictly speaking other exceptions might be raised, especially if the problem is a lower-level networking problem (e.g., if the network connection is offline); write your <code>except</code> clauses more generally if catching these is important to you (vs having them cause an uncaught exception). Or, more simply, just a naked <code>nr.ping()</code> call (not wrapped inside a <code>try</code>) and allow any Exceptions to cause a fatal exit error.</p>
 <h3>debug(lvl=1)</h3>
 <p>Example usage:</p>
 <pre><code># nr is a Numerous
