@@ -15,7 +15,8 @@ import threading
 #    -m metric    : use metric as the test metric (see discussion below)
 #    -p parallel  : number of threads run in parallel (default is 10)
 #    -D           : debug flag
-#    -q           : quiet - don't display all the individual results
+#    -q           : quiet - don't display anything (just exit status)
+#    -v           : verbose - display extra stuff
 #
 # (Exactly) One non-optional argument must be given:
 #        ADD - to run the ADD version of the test
@@ -37,6 +38,7 @@ parser.add_argument('-D', '--debug', action="count")
 parser.add_argument('-m', '--metric')
 parser.add_argument('-p', '--parallel', type=int, default=10)
 parser.add_argument('-q', '--quiet', action="store_true")
+parser.add_argument('-v', '--verbose', action="store_true")
 parser.add_argument('testtype', choices=['ADD', 'ONLY'])
 args = parser.parse_args()
 
@@ -159,7 +161,7 @@ for t in theThreads:
     t.join()
 
 # and now just print all their results, if requested
-if not args.quiet:
+if args.verbose:
     while True:
         try:
             print(outputQ.get(block=False))
