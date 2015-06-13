@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150415-1.6.0"
+_NumerousClassVersionString = "20150613.dev"
 
 #
 # metric object
@@ -232,11 +232,14 @@ class NumerousMetric:
         # though it's handy sometimes in cut/paste interactive testing/use.
         #
         actualId = None
+
+        # web and embed URL indicators:
+        b36 = [ 'm', 'e' ]    # http://n.numerousapp.com/{m|e}/1x8bd7ejg72d
         try:
             fields = id.split('/')
             if len(fields) == 1:      # the normal string '123123123' case
                 actualId = fields[0]
-            elif fields[-2] == "m":   # http://n.numerousapp.com/m/1x8ba7fjg72d
+            elif fields[-2] in b36:   # the "web" or "embed" links
                 actualId = int(fields[-1],36)
             else:                     # http://blahblah/metricID cases
                 actualId = fields[-1]
@@ -256,7 +259,10 @@ class NumerousMetric:
 
         if not actualId:
             # not string, not dictionary, try integer
-            actualId = "{:d}".format(id)   # raises exception if id is not int
+            try:
+                actualId = "{:d}".format(id)
+            except ValueError:     # we're all out of tricks... return error
+                raise NumerousError({}, -1, "Can't figure out id from \"{}\"".format(id))
 
         # str-fication is belt/suspenders in case (e.g.) was an int in a dict
         self.id = str(actualId)
@@ -420,7 +426,7 @@ class NumerousMetric:
         # if you don't specify a userId but DO have a userId
         # in the perms, use that one
         if (not userId) and ('userId' in perms):
-            userId= perms['userId']
+            userId = perms['userId']
         api = self.__getAPI('permission', 'PUT', userId=userId)
         return self.nr._simpleAPI(api, jdict=perms)
 

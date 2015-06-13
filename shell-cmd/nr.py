@@ -692,7 +692,9 @@ def valueParser(s):
              "%m/%d/%Y %H:%M",             # seconds omitted (yyyy)
              "%m/%d/%y %H:%M",             # (yy)
              "%m/%d/%Y",                   # time completely omitted (yyyy)
-             "%m/%d/%y"
+             "%m/%d/%y",
+             "%Y-%m-%dT%H:%M:%S",          # close to the Numerous format
+             "%Y-%m-%d"                    # just the date part of Numerous fmt
         ]
 
         # kinda hokey, but easy

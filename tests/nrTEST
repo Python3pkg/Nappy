@@ -545,6 +545,9 @@ verifyNR $MVAL "Reading via $RESULT" $RESULT
 doNR $METRIC'[web]'
 verifyNR $MVAL "Reading via $RESULT" $RESULT
 
+doNR $METRIC'[embed]'
+verifyNR $MVAL "Reading via $RESULT" $RESULT
+
 # test the "set the value naked" method of metric creation
 doNR -wM +$M 777
 M777=$RESULT
