@@ -20,28 +20,17 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 
 Works on both python2 and python3.
 
+## New in version 1.6.1
+* NumerousMetric() constructor accepts new "embed" format URL now as metric ID.
+* PERFORMANCE: Keep-alive works properly, server requests much faster now
+* Several minor bug fixes
+
 ## New in version 1.6.0
 * Fine grained permissions support
 * Fixed exception raised when multiple matches in metricByLabel
 * Improved debug() function
 * Improved subfield/event notation handling in shell-cmd/nr.py
 * Switched to MIT license (less restrictive than BSD)
-
-## New in version 1.5.2
-* catches more network exceptions from requests and converts them into NumerousNetworkError exceptions
-
-## New in version 1.5.1
-* /v2 endpoint for metric PUT (update); allows updating new parameters including photoTreatment and graphingOptions.
-* metricByLabel supports ID matchType
-* server response times available in statistics
-* Cleaned up / improved exception generation in several places
-* appURL() method
-* __str__ method for Numerous objects
-
-## New in version 1.5.0
-
-* Metric fields can be accessed with caching and [ ] subscript notation.
-* More ways to specify metric IDs in constructor
 
 ## Getting started
 
