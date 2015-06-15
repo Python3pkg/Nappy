@@ -2,12 +2,14 @@
 #
 # Test program to force the throttle code to generate 429 throttling
 #
-# Note that generally the server doesn't respond fast enough (usually
-# about 3 requests per second) for a single thread to ever hit the rate
-# limit (300 per minute) by itself.
+# In earlier versions of the numerous class library the max single threaded
+# response rate was roughly 3 API calls per second bcs it wasn't using
+# keep-alive. Now you can get 12-14 API calls per second and so the
+# entire notion of having to use multiple threads is moot. The test
+# is thus more complex than it needs to be; nevertheless I have left
+# the threading in place because - hey, why not.
 #
-# For this reason I have set the default for the -p option to 3.
-# Thus simply invoking this program with no options will in fact run
+# Simply invoking this program with no options will in fact run
 # a useful test:
 #   - a dummy metric will be created
 #   - three threads will be started and read that metric in a loop

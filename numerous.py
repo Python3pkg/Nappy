@@ -799,6 +799,7 @@ class Numerous:
         self.serverName = server
         self.__serverURL = "https://" + server
         self.authTuple = (apiKey, '')
+        self.__session = None
         self.__debug = 0
         self._arbitraryMaximumTries = 10   # see throttle retry loop
         self.statistics = defaultdict(int) # for info/debugging; various stats
@@ -1183,7 +1184,7 @@ class Numerous:
             except AttributeError:      # it was already just data in memory
                 pass
 
-        httpmeth = api.get('http-method','OOOPS')
+        httpmeth = api['http-method']   # 'GET' / 'PUT' / 'POST' / etc
 
         # on general principles we aren't going to try "forever"; it's really
         # the throttle policy that is responsible for limiting this loop.
@@ -1197,11 +1198,17 @@ class Numerous:
                 if self.__debug > 0:
                     print("DEBUG: request({}, {})".format(httpmeth, url))
 
-                resp = requests.request(httpmeth, url,
+                # the theory here is: make a new Session (next time)
+                # if we ever exception out of here. I'm not entirely sure
+                # this is a good/bad/effective/useless idea.
+                session = self.__session or requests.Session()
+                self.__session = None
+                resp = session.request(httpmeth, url,
                                         auth=self.authTuple,
                                         data=data,
                                         files=multipart,
                                         headers=hdrs)
+                self.__session = session
             except (requests.exceptions.RequestException,
                     requests.exceptions.ConnectionError) as x:
                 raise NumerousNetworkError(x)
