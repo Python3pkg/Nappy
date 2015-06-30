@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150615-1.6.1"
+_NumerousClassVersionString = "20150627-1.6.1+xxx"
 
 #
 # metric object
@@ -214,6 +214,7 @@ class NumerousMetric:
         #
         # It can also be a metric's web link, e.g.:
         #     http://n.numerousapp.com/m/1x8ba7fjg72d
+        # The '/e/' "embed" form is also accepted.
         #
         # in which case we "just know" that the tail is a base36
         # encoding of the ID.
@@ -660,6 +661,8 @@ class NumerousMetric:
 # This is your "connection" to the server (albeit there is no connection)
 # You generally just make one of these (or one per APIKey you are working with)
 # Then you instantiate NumerousMetric objects off of it.
+# If you are multi-threading you should make one of these per thread, if
+# only because I have no idea about the underlying requests/etc libraries.
 #
 #
 
@@ -903,26 +906,61 @@ class Numerous:
                 nr.statistics['throttleMaxAttempt'] = attempt
 
         try:
-            backoff = [ 2, 5, 15, 30, 60 ][attempt]
+            backoff = [ 0.75, 1.5, 5, 15, 45 ][attempt]
         except IndexError:
             nr.statistics['throttleMaxed'] += 1
             return False               # too many tries
 
         # if we weren't told to back off, no need to retry
         if tparams['result-code'] != requests.codes.too_many_requests:  #429
+            #
             # but if we are closing in on the limit then slow ourselves down
             # note that some errors don't communicate rateleft so we have to
             # check for that as well (will be -1 here if wasn't sent to us)
+            #
+            # the point of this policy is to protect OTHER implementations
+            # that might not be aware of rate-limiting (i.e., we're being
+            # generous here by slowing ourselves down to try to avoid
+            # reaching the actual rate limit)
             #
             # at constructor time our "throttle data" (td) was set up with
             # the 'voluntary' arbitrary limit
             if rateleft >= 0 and rateleft < td['voluntary']:
                 nr.statistics['throttleVoluntaryBackoff'] += 1
-                # arbitrary: 1 sec if more than half left, 3 secs if less
-                if (rateleft*2) > td['voluntary']:
-                    time.sleep(1)
+                #
+                # given N API calls remaining, and T seconds until
+                # a new rate allocation, compute a N-per-T rate delay
+                # time such that we probably won't hit the 429 limit.
+                # (no guarantee bcs multiple clients can be running)
+                #
+                # So, for example, if you have 20 APIs remaining and
+                # 5 seconds until a fresh allocation, we will delay
+                # you 250msec so that, in effect, you are running at a
+                # 4 API per second rate and "approximately won't hit"
+                # the 429 limit ever (since there's other overhead and
+                # in any case we're just trying to be nice there's no need
+                # to get overly fussy about exactness)
+                #
+                # When there are only a few APIs left and a lot of time,
+                # this could impose long delays. E.g., rateleft 2, but
+                # 40 seconds to go until fresh, you'd delay 20 seconds.
+                # You're probably going to hit the 429 in this situation
+                # regardless, so cap the maximum voluntary delay arbitrarily.
+                # Plus we don't know for sure here you will even ever make
+                # another call (so delaying you 20 seconds in that case is
+                # ludicrous; the few seconds here will be bad enough already)
+                #
+                if tparams['rate-reset'] > 0 and rateleft > 0:
+                    # force floating point
+                    secs_per_API = (tparams['rate-reset'] + .01) / rateleft
                 else:
-                    time.sleep(3)
+                    secs_per_API = backoff
+
+                # arbitrary voluntary delay cap
+                secs_per_API = min(3, secs_per_API)
+
+                nr.statistics['throttleVoluntaryDelays'] += secs_per_API
+                time.sleep(secs_per_API)
 
             return False               # no retry
 
