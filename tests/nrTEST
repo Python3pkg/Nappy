@@ -28,7 +28,10 @@ DEVTEST=no
 NRTEST=./nrTEST      # only used in DEVTEST case
 T429TEST=./t429.py   # only used in the DEVTEST case
 
-
+TEST_PREFIX="  :test:  "
+FAIL_PREFIX="***FAIL***"
+INFO_PREFIX="..INFO..  "
+QUIK_PREFIX=" :quick:  "
 
 #
 # OPTIONS
@@ -43,6 +46,9 @@ T429TEST=./t429.py   # only used in the DEVTEST case
 #
 #    -4 do not run the 429 throttling test. This is also implied by -Q
 #
+#    -3 do not run python 3 (only applies with -D)
+#    -2 do not run python 2 (only applies with -D)
+#
 #    --500 specifically ignore (retry) 500/504 errors from the server.
 #          XXX this is a temporary hack when NumerousApp server is being buggy
 #
@@ -50,6 +56,8 @@ T429TEST=./t429.py   # only used in the DEVTEST case
 
 SOMECONTINUE=no
 RUN429=yes
+DPY3=yes
+DPY2=yes
 
 # allows for combining e.g., -QX and also supports the --option form (for --500)
 
@@ -70,7 +78,7 @@ do
 
     # all the single opts have to be further getopt-ified and looped here
     x-*)
-      args=`getopt XQCD4 "$1"`
+      args=`getopt XQCD432 "$1"`
       if [ $? -ne 0 ]
       then
         echo "Usage: -XQDC4 --500"
@@ -81,6 +89,14 @@ do
         case "x$arg" in
           x-4)
             RUN429=no
+            ;;
+
+          x-3)
+            DPY3=no
+            ;;
+
+          x-2)
+            DPY2=no
             ;;
 
           x-C)
@@ -132,34 +148,40 @@ then
 
     NRPY=../shell-cmd/nr.py
 
-    echo ' - - - - TESTING PYTHON 2 - - - -'
-
-    NR500="$NR500" PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
-    if [ $? -ne 0 ]; then echo "python v2 failed"; exit 1; fi
-
-    if [ $RUN429 = "yes" ]
+    if [ $DPY2 == yes ]
     then
-        echo ' ... ... T429 PYTHON 2 ... ...'
-        echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
-        echo 'Just expect a bunch of raw statistics output if this works'
-        echo ' ... '
-        PYTHONPATH=.. python $T429TEST --statistics
-        echo ' ... ... T429 DONE(P2) ... ...'
+      echo ' - - - - TESTING PYTHON 2 - - - -'
+
+      NR500="$NR500" PYX=python NRX="python $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
+      if [ $? -ne 0 ]; then echo "python v2 failed"; exit 1; fi
+
+      if [ $RUN429 = "yes" ]
+      then
+          echo ' ... ... T429 PYTHON 2 ... ...'
+          echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
+          echo 'Just expect a bunch of raw statistics output if this works'
+          echo ' ... '
+          PYTHONPATH=.. python $T429TEST --statistics
+          echo ' ... ... T429 DONE(P2) ... ...'
+      fi
     fi
 
     echo ' - - - - TESTING PYTHON 3 - - - -'
 
-    NR500="$NR500" PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
-    if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
-
-    if [ $RUN429 = "yes" ]
+    if [ $DPY3 == yes ]
     then
-        echo ' ... ... T429 PYTHON 3 ... ...'
-        echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
-        echo 'Just expect a bunch of raw statistics output if this works'
-        echo ' ... '
-        PYTHONPATH=.. python3 $T429TEST --statistics
-        echo ' ... ... T429 DONE(P3) ... ...'
+      NR500="$NR500" PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
+      if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
+
+      if [ $RUN429 = "yes" ]
+      then
+          echo ' ... ... T429 PYTHON 3 ... ...'
+          echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
+          echo 'Just expect a bunch of raw statistics output if this works'
+          echo ' ... '
+          PYTHONPATH=.. python3 $T429TEST --statistics
+          echo ' ... ... T429 DONE(P3) ... ...'
+      fi
     fi
 
     exit 0
@@ -312,8 +334,9 @@ ensureAPIQuota() {
 failout() {
     DIE=yes
     if [ "x$1" = "xCONTINUE" ]; then DIE=no; shift; fi
-    echo "FAILED:::: $*"
+    echo "$FAIL_PREFIX" "$*"
     if [ "$DIE" = "yes" ]; then exit 1; fi
+    infomsg " ... but CONTINUING anyway"
 }
 
 
@@ -334,9 +357,9 @@ doNR() {
 
   if [ "x$NR500" = "x" ]     # XXX just to make the output pretty (no extra space) ...
   then
-    echo "TESTING::: $NR $*"
+    echo "$TEST_PREFIX" "$NR $*"
   else
-    echo "TESTING::: $NR $NR500 $*"
+    echo "$TEST_PREFIX" "$NR $NR500 $*"
   fi
 
   $NR $NR500 "$@" > $TMPFILE
@@ -416,7 +439,7 @@ verifyNR() {
 }
 
 doPython() {
-  echo "TESTING::: $PYTHON -c [ ... $1 ]"
+  echo "$TEST_PREFIX" "$PYTHON -c [ ... $1 ]"
   $PYTHON -c "$2" > $TMPFILE
   if [ $? -ne 0 ]; then failout "non-zero exit from python"; fi
   RESULT=`cat $TMPFILE`
@@ -431,12 +454,12 @@ verifyPython() {
 # Just a way to put an info into the output stream, properly formatted
 #
 infomsg() {
-  echo "::INFO:::: $*"
+  echo "$INFO_PREFIX" "$*"
 }
 
 # variant for things skipped via -Q
 quickmsg() {
-  echo ":::QUICK:: $*"
+  echo "$QUIK_PREFIX" "$*"
 }
 
 # utility function to parse a JSON object and return (via RESULT) a field
@@ -663,7 +686,7 @@ verifyNR -1 "Read back" $METRIC
 # a couple of quick tests of subscription functions
 # inspired by old (now-fixed) bugs
                               # by name without -n, on purpose to test error
-verifyNR "" "-B exception" EXIT:1 -Bq $M 
+verifyNR "" "-B exception" EXIT:1 -Bq $M
 verifyNR "False" "Checking notifyOnAnyChange" -B "${METRIC}[notifyOnAnyChange]"
 
 # test on a totally separate metric to test out the 'updated' write() feature
@@ -977,7 +1000,7 @@ then
 else
     K2=$NUMEROUSAPIKEY2       # just for brevity
 
-    # Set metric to a known value 
+    # Set metric to a known value
     V="86753"
     doNR -wq $METRIC "$V"
 
@@ -1003,7 +1026,7 @@ else
     # XXX I was going to test "shouldn't able to like/comment/error" but
     #     as of 4/14/2015 you CAN do those things even on a private metric
     #     and even with no permissions at all. So I'm not sure if that
-    #     is a server bug or functions-as-designed. 
+    #     is a server bug or functions-as-designed.
 
 
     # now give K2 read permission
@@ -1168,6 +1191,87 @@ infomsg "the first 5 lines of that stream..."
 infomsg "- * - * - * - * -"
 echo "$RESULT" | head -5
 infomsg "- * - * - * - * -"
+
+#
+# Some tests of throttling functionality
+#
+if [ $QUICK = no ]
+then
+  TPGM="import numerous
+import time
+
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+n = 0
+
+nr.ping()             # just anything to cause an API call
+if nr.statistics['rate-reset'] > 0:
+   time.sleep(nr.statistics['rate-reset'])   # wait until top of minute
+
+# Note that the above ping() itself could have throttled...
+nT0 = nr.statistics['throttleVoluntaryBackoff']
+
+while nr.statistics['throttleVoluntaryBackoff'] == nT0:
+    x = metric.read()
+    n += 1
+    # shouldn't take anywhere near this many...
+    if n > 1000:
+        print('Unable to trigger voluntary throttling')
+        exit(1)
+
+print('{} {}'.format(n, nr.statistics['throttleVoluntaryDelays']))
+exit(0)
+"
+
+  doPython "Testing voluntary throttling" "$TPGM"
+  CALLS=`echo $RESULT | awk '{print $1}'`
+  TIME=`echo $RESULT | awk '{print $2}'`
+  infomsg "Voluntary throttle delayed $TIME after $CALLS calls"
+
+  # test the throttle cap; this is a little bit adhoc but if we
+  # use up a gazillion APIs at the "top" of the minute, then we
+  # should be able to trigger the code path that caps the delay.
+  # See equivalent concept in ratetest.py
+  TPGM="import numerous
+import time
+
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+metric = nr.metric($DQ$METRIC$DQ)
+
+noVol = lambda nr, tp, td, up: (
+   (tp['result-code'] == 429) and up[0](nr, tp, up[1], up[2]))
+nrX = numerous.Numerous(apiKey=\"$APIKEY\", throttle=noVol)
+
+# get to the top of the minute (fresh API allocation)
+# and then get the APIs remaining down to a very small number
+ignored = nrX.user()
+if nrX.statistics['rate-reset'] > 0:
+   time.sleep(nrX.statistics['rate-reset'])
+
+while nrX.statistics['rate-remaining'] > 3:
+    ignored = nrX.user()
+
+n = 0
+while nr.statistics['throttleVoluntaryBackoff'] == 0:
+    x = metric.read()
+    n += 1
+    # shouldn't take anywhere near this many...
+    if n > 1000:
+        print('Unable to trigger voluntary throttling')
+        exit(1)
+
+print('{} {}'.format(n, nr.statistics['throttleVoluntaryDelays']))
+exit(0)
+"
+
+  doPython "Testing voluntary throttling capped case" "$TPGM"
+  CALLS=`echo $RESULT | awk '{print $1}'`
+  TIME=`echo $RESULT | awk '{print $2}'`
+  infomsg "Delay was $TIME after $CALLS calls"
+
+else
+  quickmsg "Not testing voluntary throttling"
+fi
 
 #
 # create 200 comments just to make sure the chunked iterators work
