@@ -24,7 +24,7 @@ lambda nr, tp, td, up: (tp['result-code'] == 429) and up[0](nr, tp, up[1], up[2]
 #
 
 def throttleWrap(nr, tparams, td, up):
-    td.append(tparams['request'])
+    td.append((tparams['request'], tparams['result-code']))
     return up[0](nr, tparams, up[1], up[2])
 
 
