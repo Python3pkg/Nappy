@@ -14,7 +14,12 @@ from numerous import Numerous, numerousKey, \
 #
 # usage
 #  nr [ -c credspec ] [ -t limit ] [-D] [-jknNqwy+/ABEIMPS] [ m1 [v1] ]...
-#         additional options: [ --ensurerate ] [ -R ]
+#         additional options:
+#              [ --ensurerate ]
+#              [ --statistics ]
+#              [ --requestlog ]
+#              [ -R ]
+#
 #
 #  nr [ -c credspec ] [-Dnq] -I --delete m1 interaction1 ...
 #  nr [ -c credspec ] [-Dnq] -E --delete m1 event1 ...
@@ -272,6 +277,10 @@ from numerous import Numerous, numerousKey, \
 # and ONLY the flags -D (debug) and/or -q (quiet) are valid. In particular
 # you CANNOT kill a metric by name, you must first look up its numeric Id.
 #
+# OTHER OPTIONS
+#   --statistics will display various statistics at the end
+#   --requestlog will display a log of all the requests made to the server
+#
 # Examples:
 #
 #   WRITE 17 to MyVar and 42 to MyOtherVar:
@@ -385,10 +394,16 @@ parser.add_argument('-t', '--limit', type=int, default=-1)
 parser.add_argument('-D', '--debug', action="count", default=0)
 parser.add_argument('--delete', action="store_true")
 parser.add_argument('-U', '--user', action="store_true")
-parser.add_argument('--statistics', action="store_true")  # info/debugging support
-parser.add_argument('--retry500', action="store_true")    # retry 500/504 errors
+parser.add_argument('--statistics', action="store_true")
 parser.add_argument('-R', '--ratelimits', action="count", default=0)
-parser.add_argument('--ensurerate', type=int, default=0)             # use with -R
+parser.add_argument('--ensurerate', type=int, default=0)     # use with -R
+
+argx=parser.add_mutually_exclusive_group()
+# these are mutually exclusive because both use throttle overrides
+# (could have allowed both by being more clever, but why)
+argx.add_argument('--retry500', action="store_true")    # retry 500/504 errors
+argx.add_argument('--requestlog', action="store_true")  # show all API calls
+
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
 wgx.add_argument('-E', '--event', action="store_true")
@@ -457,7 +472,6 @@ if args.delete:
 
     if bad:
         exit(1)
- 
 
 
 # --user has similar (but not quite the same) exclusion rules
@@ -615,12 +629,22 @@ def throttleRetryServerErrors(nr, tp, td, up):
         tp['rate-reset'] = 15       # wait at least 15s, possibly more w/backoff
     return up[0](nr, tp, up[1], up[2])
 
+# used to keep log of all API requests made
+def throttle_log_requests(nr, tparams, td, up):
+    td.append((tparams['request'], tparams['result-code']))
+    return up[0](nr, tparams, up[1], up[2])
 
 tf = None
+td = None
 if args.retry500:
     tf = throttleRetryServerErrors
+elif args.requestlog:
+    log_of_all_requests = []
+    td = log_of_all_requests
+    tf = throttle_log_requests
 
-nrServer = Numerous(apiKey=k, throttle=tf)
+
+nrServer = Numerous(apiKey=k, throttle=tf, throttleData=td)
 
 
 # if we've been asked to report server statistics, enhance the
@@ -1324,6 +1348,14 @@ def mainCommandProcessing(nr, args):
         print("Statistics for {}:".format(nr))
         for k in nr.statistics:
             print("{:>24s}: {}".format(k, nr.statistics[k]))
+
+    if args.requestlog:
+        for rx in log_of_all_requests:
+            rq = rx[0]
+            print("{} {}".format(rq['http-method'], rq['url']))
+            if rq['jdict']:
+                print("  additional param dictionary: ", rq['jdict'])
+            print("    --> {}".format(rx[1]))
 
     return exitStatus
 
