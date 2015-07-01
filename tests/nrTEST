@@ -1260,6 +1260,10 @@ while nr.statistics['throttleVoluntaryBackoff'] == 0:
         print('Unable to trigger voluntary throttling')
         exit(1)
 
+# One way or another this delay will happen... may as well just sit here
+# (because we've used up almost all the API allocation at this point)
+time.sleep(nr.statistics['rate-reset'])
+
 print('{} {}'.format(n, nr.statistics['throttleVoluntaryDelays']))
 exit(0)
 "
