@@ -35,17 +35,11 @@ except:    # python2
 #    -D           : debug flag
 #    --statistics : display statistics when done
 #
-#
-# Note that it is not usually possible to generate enough traffic with
-# one thread to hit the rate limit, as the server tends to operate at
-# only about 3 requests per second (sequentially; but throughput scales
-# with parallel requests).
-#
 # If no metric is supplied, the program will create its own metric and use it
 # and delete that metric on normal exit (any abnormal exit won't delete it)
 #
 # If a metric argument is supplied, the program will:
-#     - first attempt to use it as a metric ID. If that works, use that metric.
+#     - attempt to use it as a metric ID. If that works, use that metric.
 #     - then attempt to look it up ByLabel 'STRING'
 #     - then attempt to look it up ByLabel 'ONE' (regexp processing will work)
 #     - then simply use it as a label for a created metric
@@ -104,7 +98,7 @@ nrMain = numerous.Numerous(apiKey=apiKey)
 testmetric = None
 
 if args.metric:
-    #  - first attempt to use it as a metric ID. If that works, use that metric.
+    #  - attempt to use it as a metric ID. If that works, use that metric.
     #  - then attempt to look it up ByLabel 'STRING'
     #  - then attempt to look it up ByLabel 'ONE' (regexp processing will work)
     for mt in [ 'ID', 'STRING', 'ONE' ]:
