@@ -13,18 +13,28 @@ import time
 #    -n amt       : iterations of test (can be -1 for infinite)
 #    -t limit     : limit on how many throttles (exit when reached)
 #    -q           : quiet - no output unless you specifically rqst (e.g. stats)
-#    -Y           : synchronize to top of API rate minute
+#    -Y           : do NOT synchronize to top of API rate minute
 #    -D           : debug flag
 #    --capdelay   : force the volmaxdelay path (code coverage hack)
 #    --statistics : display statistics when done
+#
+# With no arguments at all this loops over a default number of API calls
+# and computes the effective API-per-minute rate.  Essentially it tests
+# the voluntary throttling code. The rate should asymptomically approach
+# the 300/minute theoretical max. 
+#
+# Note that you can get HIGHER rates than this if you don't sync to the top
+# of the API rate minute (-Y) or if you run the test for too few iterations.
+# For example, -n 20 will run very fast and not hit any limits and report
+# an API/minute rate that you'd never get if you performed thousands of calls.
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('-c', '--credspec')
 parser.add_argument('-D', '--debug', action="count")
 parser.add_argument('-m', '--metric')
-parser.add_argument('-n', '--ncalls', type=int, default=-1)
+parser.add_argument('-n', '--ncalls', type=int, default=1500)
 parser.add_argument('-t', '--throttled', type=int, default=-1)
-parser.add_argument('-Y', '--sync', action="store_true")
+parser.add_argument('-Y', '--nosync', action="store_true")
 parser.add_argument('-q', '--quiet', action="store_true")
 parser.add_argument('--capdelay', action="store_true")
 parser.add_argument('--statistics', action="store_true")
@@ -42,6 +52,8 @@ def sync_to_top_of_api_rate(nr):
 
 
 nr = numerous.Numerous(apiKey=numerous.numerousKey(args.credspec))
+if args.statistics:
+    nr.statistics['serverResponseTimes'] = [0] * 5 # keep extra response times
 
 testmetric = None
 
@@ -72,7 +84,10 @@ if args.debug:
     nr.debug(10)
 
 
-if args.sync:
+if (not args.quiet) and (args.ncalls > 300):
+    print("Performing {} calls; expect this to take roughly {:.1f} minutes".format(args.ncalls, (args.ncalls/300.0)+1))
+
+if not args.nosync:
     sync_to_top_of_api_rate(nr)
 
 
@@ -125,10 +140,11 @@ t1 = time.time()
 
 if not args.quiet:
     print("Smallest rate remaining was: ", smallest_rate_remaining)
-    print("Performed {} operations per minute".format((n_ops*60.0)/(t1-t0)))
+    print("Performed {:.2f} operations per minute".format((n_ops*60.0)/(t1-t0)))
 
 if args.statistics:
-    print(nr.statistics)
+    for k in nr.statistics:
+        print("{:>24s}: {}".format(k, nr.statistics[k]))
 
 if deleteIt:
     testmetric.crushKillDestroy()
