@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150627-1.6.1+xxx"
+_NumerousClassVersionString = "20150630-1.6.1+xxx"
 
 #
 # metric object
@@ -814,8 +814,9 @@ class Numerous:
         # The system throttleDefault policy accepts a dictionary as its
         # data input, with the following keys:
         #   'voluntary' : threshold for voluntary throttling before actual 429
+        #   'volmaxdelay' : maximum arbitrary voluntary throttle delay
         #
-        systemTP = { 'voluntary' : 40 }
+        systemTP = { 'voluntary' : 40, 'volmaxdelay' : 5 }
 
         # you can alter the above parameters but keep
         # the default throttle function:
@@ -898,18 +899,13 @@ class Numerous:
     #
     @staticmethod
     def __throttleDefault(nr, tparams, td, up):
-        rateleft = tparams['rate-remaining']
         attempt = tparams['attempt']    # note: is zero on very first try
+
+        # just some stats for curiousity and debugging:
         if attempt > 0:
             nr.statistics['throttleMultipleAttempts'] += 1
             if attempt > nr.statistics['throttleMaxAttempt']:
                 nr.statistics['throttleMaxAttempt'] = attempt
-
-        try:
-            backoff = [ 0.75, 1.5, 5, 15, 45 ][attempt]
-        except IndexError:
-            nr.statistics['throttleMaxed'] += 1
-            return False               # too many tries
 
         # if we weren't told to back off, no need to retry
         if tparams['result-code'] != requests.codes.too_many_requests:  #429
@@ -925,52 +921,85 @@ class Numerous:
             #
             # at constructor time our "throttle data" (td) was set up with
             # the 'voluntary' arbitrary limit
-            if rateleft >= 0 and rateleft < td['voluntary']:
+            APIs_left = tparams['rate-remaining']
+            if APIs_left >= 0 and APIs_left < td['voluntary']:
                 nr.statistics['throttleVoluntaryBackoff'] += 1
-                #
-                # given N API calls remaining, and T seconds until
-                # a new rate allocation, compute a N-per-T rate delay
-                # time such that we probably won't hit the 429 limit.
-                # (no guarantee bcs multiple clients can be running)
-                #
-                # So, for example, if you have 20 APIs remaining and
-                # 5 seconds until a fresh allocation, we will delay
-                # you 250msec so that, in effect, you are running at a
-                # 4 API per second rate and "approximately won't hit"
-                # the 429 limit ever (since there's other overhead and
-                # in any case we're just trying to be nice there's no need
-                # to get overly fussy about exactness)
-                #
-                # When there are only a few APIs left and a lot of time,
-                # this could impose long delays. E.g., rateleft 2, but
-                # 40 seconds to go until fresh, you'd delay 20 seconds.
-                # You're probably going to hit the 429 in this situation
-                # regardless, so cap the maximum voluntary delay arbitrarily.
-                # Plus we don't know for sure here you will even ever make
-                # another call (so delaying you 20 seconds in that case is
-                # ludicrous; the few seconds here will be bad enough already)
-                #
-                if tparams['rate-reset'] > 0 and rateleft > 0:
-                    # force floating point
-                    secs_per_API = (tparams['rate-reset'] + .01) / rateleft
-                else:
-                    secs_per_API = backoff
-
-                # arbitrary voluntary delay cap
-                secs_per_API = min(3, secs_per_API)
-
-                nr.statistics['throttleVoluntaryDelays'] += secs_per_API
-                time.sleep(secs_per_API)
+                dt = Numerous.__compute_voluntary_delay(tparams, td)
+                nr.statistics['throttleVoluntaryDelays'] += dt
+                time.sleep(dt)
 
             return False               # no retry
 
+        #
+        # At this point we are in the 429 situation - the server returned
+        # the "too many" APIs error and we have to wait for however long the
+        # server just told us. A small backoff is added just to be sure,
+        # and in pathalogical cases (requires multiple threads banging hard
+        # on the server) the backoff increases with each attempt.
+        #
 
-        # decide how long to delay ... we just wait for as long as the
-        # server told us to (plus "backoff" seconds slop to really be sure we
-        # aren't back too soon)
+        # Find a backoff and implicitly determine if tried too many times:
+        # [ XXX should be randomized slightly but this is already silly ]
+        try:
+            backoff = [ 0.75, 1.5, 5, 15, 45 ][attempt]
+        except IndexError:
+            nr.statistics['throttleMaxed'] += 1
+            return False               # too many tries
         nr.statistics['throttle429'] += 1
         time.sleep(tparams['rate-reset'] + backoff)
-        return True
+        return True    # this is what tells simpleAPI to retry
+
+    #
+    # Helper function for the default throttle policy when voluntary
+    # delay seems advisable. Returns delay time based on this concept:
+    #
+    # Given N API calls remaining and T seconds until fresh allotment,
+    # compute a N-per-T rate delay so the hard rate limit probably won't
+    # hit (there is no guarantee bcs multiple clients can be running).
+    #
+    # Example: 20 APIs remaining and 5 seconds until fresh allocation.
+    # A delay of 250msec per API ensures we (approximately) don't hit the
+    # limit. Always remember the point here is just to TRY to be NICE.
+    # It's not important to be fussy about exactness.
+    #
+    # In effect the concept is to "smear" an inevitable rate-limit delay
+    # over the tail end of the API rate allocation rather than hitting
+    # the hard limit and encountering a long (e.g., 30 second) hard delay.
+    #
+    # When there are only a few APIs left and a lot of time, this could
+    # impose long delays. E.g., rateleft 2, but 40 seconds to go until
+    # fresh. Although this "shouldn't" happen if you have a single thread
+    # using this smear algorithm, it can certainly happen with multiple
+    # threads or multiple processes all individually consuming APIs.
+    # In this scenario you're going to inevitably hit the hard cap anyway.
+    # Therefore: voluntary delay is arbitrarily capped to a parameter provided
+    # in the throttledata (see __init__ for where the default is set)
+    #
+    # This has been stress-tested "in the wild" by running code doing
+    # a metric.read() in a loop; theoretically such code should run at
+    # 300 API calls per minute -- and it does, either with this voluntary
+    # throttling or without it. If you are trying to run faster than 300
+    # per minute, it's all just a question of *how* you want to experience
+    # your (ultimately server-imposed) API throttling, not *if* (or how much).
+    #
+    # Speed Limit: 300 API/minute. It's The Law. :)
+    #
+
+    @staticmethod
+    def __compute_voluntary_delay(tp, td):
+        n = tp['rate-remaining']  # number of APIs until limit
+        t = tp['rate-reset']      # time until fresh allocation
+
+        if t > 0 and n > 0:
+            # force floating point
+            secs_per_API = (t + .001) / n
+        else:
+            secs_per_API = 0.5   # arbitrary when no info
+
+        # arbitrary voluntary delay cap
+        secs_per_API = min(td['volmaxdelay'], secs_per_API)
+        return secs_per_API
+
 
     # control debugging level
     def debug(self, lvl=1):
