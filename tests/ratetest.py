@@ -15,6 +15,7 @@ import time
 #    -q           : quiet - no output unless you specifically rqst (e.g. stats)
 #    -Y           : synchronize to top of API rate minute
 #    -D           : debug flag
+#    --capdelay   : force the volmaxdelay path (code coverage hack)
 #    --statistics : display statistics when done
 #
 parser = argparse.ArgumentParser()
@@ -25,6 +26,7 @@ parser.add_argument('-n', '--ncalls', type=int, default=-1)
 parser.add_argument('-t', '--throttled', type=int, default=-1)
 parser.add_argument('-Y', '--sync', action="store_true")
 parser.add_argument('-q', '--quiet', action="store_true")
+parser.add_argument('--capdelay', action="store_true")
 parser.add_argument('--statistics', action="store_true")
 
 args = parser.parse_args()
@@ -70,6 +72,8 @@ if args.debug:
     nr.debug(10)
 
 
+if args.sync:
+    sync_to_top_of_api_rate(nr)
 
 
 
@@ -80,8 +84,22 @@ if args.debug:
 
 smallest_rate_remaining = 100000000
 
-if args.sync:
+# if you wanted us to force the "maximum delay cap" branch of the code
+# we need to use up as many APIs as quickly as possible and get down
+# to a very small number left. To do that we actually have to turn off
+# the voluntary throttling until we get the APIs remaining to a small number
+if args.capdelay:
     sync_to_top_of_api_rate(nr)
+    noVol = lambda nr, tp, td, up: \
+                (tp['result-code'] == 429) and up[0](nr, tp, up[1], up[2])
+
+    k = numerous.numerousKey(args.credspec)
+    nrX = numerous.Numerous(apiKey=k, throttle=noVol)
+    ignored = nrX.user()
+    while nrX.statistics['rate-remaining'] > 3:
+        ignored = nrX.user()
+
+
 
 n_ops = 0
 t0 = time.time()
