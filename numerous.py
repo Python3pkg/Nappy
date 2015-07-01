@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150630-1.6.1+xxx"
+_NumerousClassVersionString = "20150701-1.6.1+dev"
 
 #
 # metric object
@@ -997,8 +997,7 @@ class Numerous:
             secs_per_API = 0.5   # arbitrary when no info
 
         # arbitrary voluntary delay cap
-        secs_per_API = min(td['volmaxdelay'], secs_per_API)
-        return secs_per_API
+        return min(td['volmaxdelay'], secs_per_API)
 
 
     # control debugging level
