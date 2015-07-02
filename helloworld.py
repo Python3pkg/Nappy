@@ -20,3 +20,16 @@ print (metric.read())
 # from numerous import Numerous, numerousKey
 # nr = Numerous(apiKey=numerousKey(cred_string))
 #
+# this works well with argparse, e.g. along these lines:
+#
+# parser = argparse.ArgumentParser()
+# parser.add_argument('-c', '--credspec')
+# ... other arguments ...
+#
+# args = parser.parse_args()
+# nr = Numerous(apiKey=numerousKey(args.credspec))
+#
+# which will default to getting it from NUMEROUSAPIKEY (credspec None) or
+# allow you to specify it via the given command line option in any of the
+# forms (naked APIkey on command line, in a file, from stdin, etc)
+#
