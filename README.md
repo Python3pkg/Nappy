@@ -20,12 +20,14 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 
 Works on both python2 and python3.
 
-## New in version 1.6.1
+## New in 1.6.2
+* Voluntary throttling computes dynamic appropriate delay (vs hardcoded delay). If you are doing a gazillion API calls in a tight loop, this squeezes the maximum number of calls per minute out of the server (rate-limited by the server) while at the same time being "nice" to other apps using the same API key (i.e., same rate limit). The idea is that it is "smearing" the inevitable "out of API calls" delay over the tail end of your API allocation, the goal being to get the maximum number of APIs through per minute without actually hitting the hard rate limit. It works pretty well, getting about 299.7 API/minute (if no other apps are using your API key) vs a theoretical 300/minute, while respecting the API consumption of any other apps you are running and never actually hitting the hard rate limit from the server. It's pretty clear it's time to send the Engineer on vacation and lock development. (haha)
+* The "updated" parameter in write() can now also be a datetime (or a string)
+
+## 1.6.1 - 1.6.0
 * NumerousMetric() constructor accepts new "embed" format URL now as metric ID.
 * PERFORMANCE: Keep-alive works properly, server requests much faster now
 * Several minor bug fixes
-
-## New in version 1.6.0
 * Fine grained permissions support
 * Fixed exception raised when multiple matches in metricByLabel
 * Improved debug() function

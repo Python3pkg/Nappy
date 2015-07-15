@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150701-1.6.1+dev"
+_NumerousClassVersionString = "20150715-1.6.2"
 
 #
 # metric object
@@ -482,7 +482,8 @@ class NumerousMetric:
     #   dictionary=True returns the full dictionary results.
     #
     #   updated allows you to specify the timestamp associated with the value
-    #      -- it must be a string in the format described in the NumerousAPI
+    #      -- it can be a string or a datetime.
+    #      -- If string it must be in the format described in the NumerousAPI
     #         documentation. Example: '2015-02-08T15:27:12.863Z'
     #         NOTE: The server API implementation REQUIRES the fractional
     #               seconds be EXACTLY 3 digits. No other syntax will work.
@@ -497,7 +498,14 @@ class NumerousMetric:
         if add:
             j['action'] = 'ADD'
         if updated:
-            j['updated'] = updated
+            # if you gave us a datetime, try converting it
+            try:
+                ts = updated.strftime('%Y-%m-%dT%H:%M:%S.')
+                ts = "{}{:03d}Z".format(ts, (updated.microsecond+500)//1000)
+            except AttributeError:    # just take your argument
+                ts = updated          # which should be a string already
+
+            j['updated'] = ts
 
         self.__cachedState = None  # will need to refresh cache
         api = self.__getAPI('events', 'POST')
@@ -821,7 +829,10 @@ class Numerous:
         # you can alter the above parameters but keep
         # the default throttle function:
         if throttleData and not throttle:
-            systemTP = throttleData    # i.e., your data
+            # we merge it so you don't have to respecify everything
+            # only the things you specify get overridden, the rest remain
+            systemTP = systemTP.copy()
+            systemTP.update(throttleData)  # i.e., your data can override
 
         self.__throttlePolicy = (self.__throttleDefault, systemTP, None)
 
