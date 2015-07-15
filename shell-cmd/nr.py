@@ -382,27 +382,27 @@ from numerous import Numerous, numerousKey, \
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-V', '--version', action="store_true")
-parser.add_argument('-/', '--noslash', action="store_true")
-parser.add_argument('-c', '--credspec')
-parser.add_argument('-j', '--json', action="store_true")
-parser.add_argument('-n', '--name', action="store_true")
-parser.add_argument('-N', '--regexp', action="store_true")
+parser.add_argument('-V', '--version', action="store_true", help="display version info and exit")
+parser.add_argument('-/', '--noslash', action="store_true", help="disable slash parsing. Can be useful with -n/-N if metric label has a slash in it.")
+parser.add_argument('-c', '--credspec', help="file name containing API key or the key itself")
+parser.add_argument('-j', '--json', action="store_true", help="JSON output format")
+parser.add_argument('-n', '--name', action="store_true", help="search metric by label using string match")
+parser.add_argument('-N', '--regexp', action="store_true", help="search metric by label using unanchored regexp")
 parser.add_argument('-q', '--quiet', action="store_true")
 parser.add_argument('-w', '--write', action="store_true")
 parser.add_argument('-t', '--limit', type=int, default=-1)
-parser.add_argument('-D', '--debug', action="count", default=0)
+parser.add_argument('-D', '--debug', action="count", default=0, help="turn on debug output. Use twice for even more output")
 parser.add_argument('--delete', action="store_true")
 parser.add_argument('-U', '--user', action="store_true")
-parser.add_argument('--statistics', action="store_true")
-parser.add_argument('-R', '--ratelimits', action="count", default=0)
-parser.add_argument('--ensurerate', type=int, default=0)     # use with -R
+parser.add_argument('--statistics', action="store_true", help="show statistics from numerous class")
+parser.add_argument('-R', '--ratelimits', action="count", default=0, help="display rate limit info. Use -RR to ONLY do that (no other processing)")
+parser.add_argument('--ensurerate', type=int, default=0, help="delay if necessary for sufficient API rate limit.")     # use with -R
 
 argx=parser.add_mutually_exclusive_group()
 # these are mutually exclusive because both use throttle overrides
 # (could have allowed both by being more clever, but why)
-argx.add_argument('--retry500', action="store_true")    # retry 500/504 errors
-argx.add_argument('--requestlog', action="store_true")  # show all API calls
+argx.add_argument('--retry500', action="store_true", help="XXX automatically retry if server returns error 500. XXX This should probably be eliminated now.")
+argx.add_argument('--requestlog', action="store_true", help="show complete log of requests made to server")  # show all API calls
 
 wgx = parser.add_mutually_exclusive_group()
 wgx.add_argument('-+', '--plus', action="store_true")
@@ -414,8 +414,8 @@ wgx.add_argument('-S', '--stream', action="store_true")
 wgx.add_argument('-M', '--metric', action="store_true")
 wgx.add_argument('-P', '--photo', action="store_true")
 wgx.add_argument('-y', '--onlyIf', action="store_true")
-wgx.add_argument('-k', '--key', action="store_true")
-wgx.add_argument('--killmetric', action="store_true")
+wgx.add_argument('-k', '--key', action="store_true", help="Just report API key (i.e., from env or file")
+wgx.add_argument('--killmetric', action="store_true", help="Permanently delete metric. Requires numeric ID")
 parser.add_argument('keyvals', nargs='*', metavar='key [value]')
 
 args = parser.parse_args()

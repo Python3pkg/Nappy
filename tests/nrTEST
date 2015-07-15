@@ -1197,6 +1197,8 @@ infomsg "- * - * - * - * -"
 #
 if [ $QUICK = no ]
 then
+  infomsg "Voluntary throttling tests take a few minutes"
+
   TPGM="import numerous
 import time
 
@@ -1205,7 +1207,8 @@ metric = nr.metric($DQ$METRIC$DQ)
 n = 0
 
 nr.ping()             # just anything to cause an API call
-if nr.statistics['rate-reset'] > 0:
+# arbitrary - but we know 30 seconds is usually more than enough window
+if nr.statistics['rate-reset'] < 30:
    time.sleep(nr.statistics['rate-reset'])   # wait until top of minute
 
 # Note that the above ping() itself could have throttled...
@@ -1272,7 +1275,7 @@ exit(0)
   CALLS=`echo $RESULT | awk '{print $1}'`
   TIME=`echo $RESULT | awk '{print $2}'`
   infomsg "Delay was $TIME after $CALLS calls"
-
+  infomsg "That should be equal to the throttle delay cap if it worked"
 else
   quickmsg "Not testing voluntary throttling"
 fi
