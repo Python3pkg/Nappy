@@ -84,10 +84,10 @@ if args.debug:
     nr.debug(10)
 
 
-if (not args.quiet) and (args.ncalls > 300):
+if (not args.quiet) and (args.ncalls > 300) and (args.throttled == -1):
     print("Performing {} calls; expect this to take roughly {:.1f} minutes".format(args.ncalls, (args.ncalls/300.0)+1))
 
-if not args.nosync:
+if (not args.nosync) or args.capdelay:
     sync_to_top_of_api_rate(nr)
 
 
@@ -104,12 +104,16 @@ smallest_rate_remaining = 100000000
 # to a very small number left. To do that we actually have to turn off
 # the voluntary throttling until we get the APIs remaining to a small number
 if args.capdelay:
-    sync_to_top_of_api_rate(nr)
-    noVol = lambda nr, tp, td, up: \
-                (tp['result-code'] == 429) and up[0](nr, tp, up[1], up[2])
 
+    # as of 1.6.2 you can also easily turn off voluntary throttling this way
     k = numerous.numerousKey(args.credspec)
-    nrX = numerous.Numerous(apiKey=k, throttle=noVol)
+    nrX = numerous.Numerous(apiKey=k, throttleData={'voluntary' : -1 })
+
+    # vs this other way to do it
+#    noVol = lambda nr, tp, td, up: \
+#                (tp['result-code'] == 429) and up[0](nr, tp, up[1], up[2])
+#   nrX = numerous.Numerous(apiKey=k, throttle=noVol)
+
     ignored = nrX.user()
     while nrX.statistics['rate-remaining'] > 3:
         ignored = nrX.user()
