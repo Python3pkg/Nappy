@@ -1380,30 +1380,19 @@ fi
 
 if [ $QUICK = no ]
 then
-  infomsg "About to create many metrics; only some shown in output"
-
-  for i in 0 1 2 3
-  do
-    for j in 0 1 2 3
-    do
-      for k in 0 1 2 3
-      do
-        M=DELETE-ME-XXX-DELETE-ME-$i$j$k
-        Mparams='{ "private" : true }'
-        if [ "$j$k" = "00" ]
-        then
-          infomsg "$NR -wM +$M $Mparams"
-        fi
-        $NR -wM +$M "$Mparams" > $TMPFILE
-        if [ $? != 0 ]
-        then
-          failout "$NR -wM +$M $Mparams"
-        else
-          DELETE_THESE="$DELETE_THESE `cat $TMPFILE`"
-        fi
-      done
-    done
-  done
+  N_TO_CREATE=99
+  PFX="DELETE-ME-XXX-DELETE-ME-"
+  TPGM="
+import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+params = { 'private' : True }
+for i in range($N_TO_CREATE):
+  name=\"$PFX\"+str(i)
+  m = nr.createMetric(name, attrs=params)
+  print(m['id'])
+"
+  doPython "creating $N_TO_CREATE metrics" "$TPGM"
+  DELETE_THESE="$DELETE_THESE $RESULT"
 else
   quickmsg "Skipping the creation/deletion of a gazillion metrics"
 fi
