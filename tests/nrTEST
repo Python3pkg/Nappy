@@ -683,6 +683,28 @@ verifyNR 20 "Adding 3" -w+ $METRIC 3
 verifyNR -1 "Subtracting 21" -w+ $METRIC -21
 verifyNR -1 "Read back" $METRIC
 
+# test some of the [] and __x__ semantics
+TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+m = nr.metric($DQ$METRIC$DQ)
+
+val = 88
+m.write(val)
+for k in m:             # __iter__
+  if k == 'value':
+    if m[k] != val:     # __getitem__
+      exit(1)
+
+if 'value' not in m:    # __contains__
+  exit(1)
+
+if m['label'] not in str(m):   # __str__ .. a little hokey as a test
+  exit(1)
+
+exit(0)
+"
+verifyPython "testing __x__ funcs and []" "" "$TPGM"
+
 # a couple of quick tests of subscription functions
 # inspired by old (now-fixed) bugs
                               # by name without -n, on purpose to test error
@@ -736,10 +758,14 @@ ErrInfo="{ \"kind\": \"error\", \"commentBody\": \"$ErrString\" }"
 verifyNR "" "Setting an error" -wIq $METRIC "$ErrInfo"
 
 # see if that error is actually there now
-verifyNR "error" "Reading back the [kind]" -I --limit 1 "$METRIC[kind]"
+# XXX NOTE: As of 7/28/15 the error doesn't show in the interactions;
+#           not sure if that's a bug or a feature hence the CONTINUE
+verifyNR CONTINUE "error" "Reading back [kind] via interactions" -I --limit 1 "$METRIC[kind]"
+verifyNR "error" "Reading back [kind] via stream" -S --limit 1 "$METRIC[kind]"
 
-# and check the text
-verifyNR "$ErrString" "Readback errstring" -I --limit 1 "$METRIC[commentBody]"
+# and check the text using both the interations and the stream
+verifyNR CONTINUE "$ErrString" "Readback errstring via interactions" -I --limit 1 "$METRIC[commentBody]"
+verifyNR "$ErrString" "Readback errstring w -S" -S --limit 1 "$METRIC[commentBody]"
 
 # test updating a metric's description
 Desc="This is the metric's porpoise in life"
