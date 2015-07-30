@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150715-1.6.2"
+_NumerousClassVersionString = "20150730-1.6.3"
 
 #
 # metric object
@@ -88,7 +88,7 @@ class NumerousMetric:
 
     # GET or POST events collection of a metric
     __APIInfo['events'] = {
-        'endpoint' : '/v1/metrics/{metricId}/events',
+        'endpoint' : '/v2/metrics/{metricId}/events',
         'GET' : {
             'next' : 'nextURL',
             'list' : 'events',
@@ -101,7 +101,7 @@ class NumerousMetric:
 
     # GET or DELETE an individual event
     __APIInfo['event'] = {
-        'endpoint' : '/v1/metrics/{metricId}/events/{eventID}',
+        'endpoint' : '/v2/metrics/{metricId}/events/{eventID}',
         'DELETE' : { 'success-codes' : [ 204 ] }
     }
 
@@ -135,7 +135,7 @@ class NumerousMetric:
 
     # Your specifically individual subscription on a metric
     __APIInfo['subscription'] = {
-        'endpoint' : '/v1/metrics/{metricId}/subscriptions/{userId}',
+        'endpoint' : '/v2/metrics/{metricId}/subscriptions/{userId}',
         'defaults' : {
             'userId' : 'me'           # default userId for yourself ("me")
         },
@@ -146,10 +146,7 @@ class NumerousMetric:
 
     # GET an actual metric, or update (PUT) it (parameters, not value)
     __APIInfo['metric'] = {
-        'endpoint' : '/v1/metrics/{metricId}' ,
-        'PUT' : {      # note: PUT has a /v2 interface but GET does not (yet?).
-            'endpoint' : '/v2/metrics/{metricId}'
-        },
+        'endpoint' : '/v2/metrics/{metricId}' ,
         'DELETE' : {
             'success-codes' : [ 204 ]
         }
@@ -157,7 +154,7 @@ class NumerousMetric:
 
     # POST a photo or DELETE it
     __APIInfo['photo'] = {
-        'endpoint' : '/v1/metrics/{metricId}/photo',
+        'endpoint' : '/v2/metrics/{metricId}/photo',
         'POST' : {
             'success-codes' : [ 201 ]
         },
@@ -168,7 +165,7 @@ class NumerousMetric:
 
     # permissions collection
     __APIInfo['permissions-collection'] = {
-        'endpoint' : '/v1/metrics/{metricId}/permissions',
+        'endpoint' : '/v2/metrics/{metricId}/permissions',
         # GET the permissions collection
         'GET' : {
             'next' : 'nextURL',
@@ -179,7 +176,7 @@ class NumerousMetric:
 
     # individual permissions : GET, PUT, DELETE
     __APIInfo['permission'] = {
-        'endpoint' : '/v1/metrics/{metricId}/permissions/{userId}',
+        'endpoint' : '/v2/metrics/{metricId}/permissions/{userId}',
         'defaults' : {
             'userId': 'me'            # default userId meaning "myself"
         },
@@ -685,7 +682,7 @@ class Numerous:
 
     # POST to this to create a metric
     __APIInfo['create'] = {
-        'endpoint' : '/v1/metrics',
+        'endpoint' : '/v2/metrics',
         'POST' : {
             'success-codes' : [ 201 ]
         }
@@ -716,7 +713,7 @@ class Numerous:
     }
 
     __APIInfo['user'] = {
-        'endpoint' : '/v1/users/{userId}',
+        'endpoint' : '/v2/users/{userId}',
         'defaults' : {
             'userId': 'me'            # default userId meaning "myself"
         },
@@ -729,7 +726,7 @@ class Numerous:
 
     # most popular metrics
     __APIInfo['popular'] = {
-        'endpoint' : '/v1/metrics/popular?count={count}',
+        'endpoint' : '/v2/metrics/popular?count={count}',
         'defaults' : {
             'count' : 10
         }
@@ -1236,7 +1233,7 @@ class Numerous:
             url = api['base-url']
 
         # Add the https:// etc to url if needed... you normally
-        # only pass in a server-relative endpoint like "/v1/blah"
+        # only pass in a server-relative endpoint like "/v2/blah"
         # but sometimes url is a full URL that came back from the server
         if url[0] == '/':                  # i.e. not "http..."
             url = self.__serverURL + url

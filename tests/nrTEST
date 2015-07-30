@@ -763,7 +763,7 @@ verifyNR "" "Setting an error" -wIq $METRIC "$ErrInfo"
 verifyNR CONTINUE "error" "Reading back [kind] via interactions" -I --limit 1 "$METRIC[kind]"
 verifyNR "error" "Reading back [kind] via stream" -S --limit 1 "$METRIC[kind]"
 
-# and check the text using both the interations and the stream
+# and check the text using both the interactions and the stream
 verifyNR CONTINUE "$ErrString" "Readback errstring via interactions" -I --limit 1 "$METRIC[commentBody]"
 verifyNR "$ErrString" "Readback errstring w -S" -S --limit 1 "$METRIC[commentBody]"
 
