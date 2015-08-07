@@ -1321,9 +1321,6 @@ fi
 
 if [ $QUICK = no ]
 then
-  # we don't really need to have any specific quota available; however, to be
-  # nice to the server we delay here if we aren't already at least at 200
-  ensureAPIQuota 200
   infomsg "testing 200 x $NR -Iwq $METRIC commentNNN"
 
   CMTS=""
