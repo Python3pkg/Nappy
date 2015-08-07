@@ -149,6 +149,7 @@ from numerous import Numerous, numerousKey, \
 #
 # If -y is specified the flag "onlyIfChanged" will be set on the updates.
 # This flag is an error if used on anything other than a metric value write.
+#
 # NOTE: This is NOT atomic at the server as of Oct2014 and the Numerous
 #       people say they aren't sure they can ever make it so
 #
@@ -1212,7 +1213,13 @@ def mainCommandProcessing(nr, args):
                                                        dictionary = args.json,
                                                        updated=tval)
                         except NumerousMetricConflictError as e:
-                            exitStatus = 1
+                            # it's a bit of a hack but if you asked for quiet
+                            # then this "error" (which isn't really an error)
+                            # is ignored as far as exitStatus goes, because
+                            # you can't tell the difference between this and
+                            # a "real" error when quiet. Could have used
+                            # exit status 2 for this I suppose.
+                            exitStatus = 0 if args.quiet else 1
                             if args.json:
                                 r['result'] = { 'errorCode' : e.code,
                                                 'errorDetails' : e.details,
