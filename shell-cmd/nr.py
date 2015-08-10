@@ -193,6 +193,11 @@ from numerous import Numerous, numerousKey, \
 #                -E 7834758745/245235235
 #         (metric ID and /eventID).
 #
+#         If the eventID conforms to Numerous timestamp syntax, e.g.:
+#               2015-02-08T15:27:12.863Z
+#         then it is used as a "before" key and you will get the one event
+#         that is at or before the given timestamp.
+#
 #      -I (--interaction) : interactions will be read.
 #         Interactions are everything other than value changes
 #
@@ -1261,7 +1266,12 @@ def mainCommandProcessing(nr, args):
 
             elif args.event:
                 if 'ID2' in r:
-                    r['result'] = [ metric.event(r['ID2']) ]
+                    # ID2 can either be a naked eventID or a timestamp
+                    id2 = r['ID2']
+                    if 'T' in id2 and id2[-1] == 'Z':
+                        r['result'] = [ metric.event(before=id2) ]
+                    else:
+                        r['result'] = [ metric.event(evID=id2) ]
                 else:
                     iterable = metric.events()
                     r['result'] = getIterableStuff(metric, iterable, args.limit)

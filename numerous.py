@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150730-1.6.3"
+_NumerousClassVersionString = "20150809-1.6.3+++dev"
 
 #
 # metric object
@@ -93,6 +93,10 @@ class NumerousMetric:
             'next' : 'nextURL',
             'list' : 'events',
             'dupFilter' : 'id'
+        },
+        'at' : {    # variation for finding a specific event by time stamp
+            'append-endpoint' : '/at?t={timestr}',
+            'http-method' : 'GET'
         },
         'POST' : {
             'success-codes' : [ 201 ]
@@ -602,9 +606,31 @@ class NumerousMetric:
         v = self.nr._simpleAPI(api)
         # there is no return value
 
-    # get an individual event by ID
-    def event(self, evID):
-        api = self.__getAPI('event', 'GET', eventID=evID)
+    # get an individual event by ID or timestamp.
+    # You may not specify BOTH an evID and a before (throws exception).
+    #
+    # The 'before' parameter should either be something with a
+    # strftime method (e.g., datetime) or a string like:
+    #      2015-08-10T02:17:13.315Z
+    # NOTE: the server is very strict about that format.
+
+    def event(self, evID=None, before=None):
+        if evID and before:
+            raise TypeError("Cannot specify both evID and `before'")
+        elif evID:
+            api = self.__getAPI('event', 'GET', eventID=evID)
+        else:
+            try:
+                timestr = before.strftime('%Y-%m-%dT%H:%M:%S.')
+                try:
+                    timestr += '{:03d}Z'.format(before.microsecond//1000)
+                except AttributeError:
+                    timestr += '000Z'  # no microseconds; use 000
+
+            except AttributeError:
+                timestr = before      # no strftime; it should be a string
+            api = self.__getAPI('events', 'at', timestr=timestr)
+
         return self.nr._simpleAPI(api)
 
     def eventDelete(self, evID):

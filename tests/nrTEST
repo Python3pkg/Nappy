@@ -166,10 +166,10 @@ then
       fi
     fi
 
-    echo ' - - - - TESTING PYTHON 3 - - - -'
 
     if [ $DPY3 == yes ]
     then
+      echo ' - - - - TESTING PYTHON 3 - - - -'
       NR500="$NR500" PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
       if [ $? -ne 0 ]; then echo "python3 failed"; exit 1; fi
 
@@ -684,6 +684,40 @@ verifyNR 20 "Adding 3" -w+ $METRIC 3
 verifyNR -1 "Subtracting 21" -w+ $METRIC -21
 verifyNR -1 "Read back" $METRIC
 
+# test event lookup by event ID and by timestamp
+V1=33
+V2=55
+V3=77
+
+verifyNR $V1 "Writing $V1" -w $METRIC $V1
+doNR -E --limit 1 "${METRIC}[id]"
+V1_ID=$RESULT
+doNR -E --limit 1 "${METRIC}[updated]"
+V1_UPD=$RESULT
+
+verifyNR $V2 "Writing $V2" -w $METRIC $V2
+doNR -E --limit 1 "${METRIC}[id]"
+V2_ID=$RESULT
+doNR -E --limit 1 "${METRIC}[updated]"
+V2_UPD=$RESULT
+
+verifyNR $V3 "Writing $V3" -w $METRIC $V3
+doNR -E --limit 1 "${METRIC}[id]"
+V3_ID=$RESULT
+doNR -E --limit 1 "${METRIC}[updated]"
+V3_UPD=$RESULT
+
+# read back each of V1, V2, V3 using id
+verifyNR $V1 "Reading $METRIC/$V1_ID" -E $METRIC/$V1_ID'[value]'
+verifyNR $V2 "Reading $METRIC/$V2_ID" -E $METRIC/$V2_ID'[value]'
+verifyNR $V3 "Reading $METRIC/$V3_ID" -E $METRIC/$V3_ID'[value]'
+
+# and timestamps
+verifyNR $V1 "Reading $METRIC/$V1_UPD" -E $METRIC/$V1_UPD'[value]'
+verifyNR $V2 "Reading $METRIC/$V2_UPD" -E $METRIC/$V2_UPD'[value]'
+verifyNR $V3 "Reading $METRIC/$V3_UPD" -E $METRIC/$V3_UPD'[value]'
+
+
 # test some of the [] and __x__ semantics
 TPGM="import numerous
 nr = numerous.Numerous(apiKey=\"$APIKEY\")
@@ -711,6 +745,30 @@ verifyPython "testing __x__ funcs and []" "" "$TPGM"
                               # by name without -n, on purpose to test error
 verifyNR "" "-B exception" EXIT:1 -Bq $M
 verifyNR "False" "Checking notifyOnAnyChange" -B "${METRIC}[notifyOnAnyChange]"
+
+# this isn't really a "test" so much as it is just an exercise...
+# The "Numerous Users" metric has a lot of subscribers, or at least it usually
+# does ... so try to access it and read all the subscribers and just report
+# some general statistics. There is forgiveness in this test because we
+# don't even necessarily know that that metric will live on forever...
+XXNU=6019025553067790305   # we "just know" this is the metric
+doNR $XXNU'[label]'
+if [ "$RESULT" != "Numerous Users" ]
+then
+  infomsg "Metric $XXNU wasn't exactly the expected Numerous Users metric"
+  infomsg "Check the metric and/or this test code. Skipping tests on $XXNU"
+else
+  TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+m = nr.metric($DQ$XXNU$DQ)
+s = [ x for x in m.subscriptions() ]
+print('{} {}'.format(len(s), nr.statistics['serverRequests']))
+"
+  doPython "counting subscribers" "$TPGM"
+  N=`echo $RESULT | awk '{print $1}'`
+  RQ=`echo $RESULT | awk '{print $2}'`
+  infomsg "Found $N subscribers; it took $RQ server calls to get them"
+fi
 
 # test on a totally separate metric to test out the 'updated' write() feature
 
@@ -759,9 +817,7 @@ ErrInfo="{ \"kind\": \"error\", \"commentBody\": \"$ErrString\" }"
 verifyNR "" "Setting an error" -wIq $METRIC "$ErrInfo"
 
 # see if that error is actually there now
-# XXX NOTE: As of 7/28/15 the error doesn't show in the interactions;
-#           not sure if that's a bug or a feature hence the CONTINUE
-verifyNR CONTINUE "error" "Reading back [kind] via interactions" -I --limit 1 "$METRIC[kind]"
+verifyNR "error" "Reading back [kind] via interactions" -I --limit 1 "$METRIC[kind]"
 verifyNR "error" "Reading back [kind] via stream" -S --limit 1 "$METRIC[kind]"
 
 # and check the text using both the interactions and the stream
@@ -822,15 +878,32 @@ unsubscribe_metric $TMETRIC     # otherwise you might get pinged during test
 
 
 # set it to a particular date
+
 doNR -wq $TMETRIC "EPOCHTIME: 1/15/2011"   # nephew's birthday :)
 
-# I precomputed this to match the above
-verifyNR 1295071200.0 "EPOCHTIME date read back" $TMETRIC
+# XXX timezones make testing this harder than I want to worry about
+# XXX so instead what I'm going to do is set it to another date 24
+# XXX hours later, and assume that if the difference between the two
+# XXX values is, in fact, 24 hours, that it "worked".
+doNR $TMETRIC
+T0="$RESULT"
+
+# set it to 1 day later than that
+doNR -wq $TMETRIC "EPOCHTIME: 1/16/2011"
+doNR $TMETRIC
+T1="$RESULT"
+TPGM="print('{:.1f}'.format($T1 - $T0))"
+verifyPython "Checking timestamps are 24 hours apart" "86400.0" "$TPGM"
 
 # another date test .. there was a bug that only showed up on dates
 # in the future (it was obscure!) so do one of those
 doNR -wq $TMETRIC "EPOCHTIME: 1/15/2050"
-verifyNR 2525839200.0 "Future EPOCHTIME read back" $TMETRIC
+doNR $TMETRIC
+T0="$RESULT"
+doNR -wq $TMETRIC "EPOCHTIME: 1/16/2050"
+doNR $TMETRIC
+T1="$RESULT"
+verifyPython "Checking future timestamps are 24 hours apart" "86400.0" "$TPGM"
 
 # try setting it to now
 doNR -w $TMETRIC "EPOCHTIME:now"
@@ -1294,15 +1367,30 @@ while nr.statistics['throttleVoluntaryBackoff'] == 0:
 # (because we've used up almost all the API allocation at this point)
 time.sleep(nr.statistics['rate-reset'])
 
-print('{} {}'.format(n, nr.statistics['throttleVoluntaryDelays']))
+# if everything works right, the throttleVoluntaryDelays statistics should
+# be equal to the volmaxdelay buried in the system default throttle policy.
+# Check for that. This is obviously very implementation-dependent/aware.
+# It is, however and after all, a test program...
+#
+try:
+  sysvmd = nr._Numerous__throttlePolicy[1]['volmaxdelay']
+except:
+  sysvmd = -1
+
+print('{} {} {}'.format(n, nr.statistics['throttleVoluntaryDelays'], sysvmd))
 exit(0)
 "
 
   doPython "Testing voluntary throttling capped case" "$TPGM"
   CALLS=`echo $RESULT | awk '{print $1}'`
   TIME=`echo $RESULT | awk '{print $2}'`
-  infomsg "Delay was $TIME after $CALLS calls"
-  infomsg "That should be equal to the throttle delay cap if it worked"
+  EXPECTED=`echo $RESULT | awk '{print $3}'`
+  if [ "$TIME" -eq "$EXPECTED" ]
+  then
+    infomsg "Delay was $TIME after $CALLS calls, as expected"
+  else
+    failout CONTINUE "Delay was $TIME after $CALLS calls, but expected $EXPECTED"
+  fi
 
   # at the risk of being silly... the voluntary throttling test synchronizes
   # us to a particular part of the rate throttling clock cycle, and on
