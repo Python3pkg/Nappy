@@ -500,9 +500,11 @@ class NumerousMetric:
             j['action'] = 'ADD'
         if updated:
             # if you gave us a datetime, try converting it
+            # note: we truncate, rather than round, the microseconds
+            # for simplicity (in case usec is 999900 for example).
             try:
                 ts = updated.strftime('%Y-%m-%dT%H:%M:%S.')
-                ts = "{}{:03d}Z".format(ts, (updated.microsecond+500)//1000)
+                ts = "{}{:03d}Z".format(ts, updated.microsecond//1000)
             except AttributeError:    # just take your argument
                 ts = updated          # which should be a string already
 
@@ -623,6 +625,8 @@ class NumerousMetric:
             try:
                 timestr = before.strftime('%Y-%m-%dT%H:%M:%S.')
                 try:
+                    # note: we truncate, rather than round, the microseconds
+                    # for simplicity (in case usec is 999900 for example).
                     timestr += '{:03d}Z'.format(before.microsecond//1000)
                 except AttributeError:
                     timestr += '000Z'  # no microseconds; use 000
