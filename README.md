@@ -21,7 +21,7 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 Works on both python2 and python3.
 ## New in 1.6.4
 * event() method now supports 'at' API (lookup via timestamps)
-* ifOnly='ANY' in write() allows ignoring the NumerousMetricConflictError
+* onlyIf='IGNORE' in write() allows ignoring the NumerousMetricConflictError
 
 ## Getting started
 
