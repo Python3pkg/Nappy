@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150809-1.6.3+++dev"
+_NumerousClassVersionString = "20150902-1.6.4"
 
 #
 # metric object
@@ -477,6 +477,11 @@ class NumerousMetric:
     #
     #   onlyIf=True sends the "only if it changed" feature of the NumerousAPI.
     #      -- throws NumerousMetricConflictError if no change
+    #   onlyIf='IGNORE' (literally the string 'IGNORE' in UPPER CASE)
+    #      -- like onlyIf=True but no exception is thrown if the value
+    #         is unchanged. Use this if you don't care to know whether the
+    #         write resulted in a new value or not. This probably should be
+    #         the more common usage case... sorry!
     #
     #   add=True sends the "action: ADD" (the value is added to the metric)
     #
@@ -494,8 +499,11 @@ class NumerousMetric:
     #
     def write(self, newval, onlyIf=False, add=False, dictionary=False, updated=None):
         j = { 'value' : newval }
-        if onlyIf:
+        if onlyIf is not False:
+            if onlyIf not in [ True, 'IGNORE' ]:
+                raise ValueError('onlyIf must be False, True, or "IGNORE"')
             j['onlyIfChanged'] = True
+
         if add:
             j['action'] = 'ADD'
         if updated:
@@ -519,7 +527,11 @@ class NumerousMetric:
             # if onlyIf was specified and the error is "conflict"
             # (meaning: no change), raise ConflictError specifically
             if onlyIf and x.code == requests.codes.conflict:    # 409
-                raise NumerousMetricConflictError(x.details, "No Change")
+                if onlyIf is not 'IGNORE':
+                    raise NumerousMetricConflictError(x.details, "No Change")
+                else:
+                    # forge a pseudo-result because you asked for it
+                    v = { 'value' : newval, 'unchanged' : True }
             else:
                 raise         # never mind, plain NumerousError is fine
 

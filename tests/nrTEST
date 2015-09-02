@@ -656,11 +656,27 @@ infomsg "::AS EXPECTED:: $RESULT"
 doNR -q --killmetric $DUPMETRIC
 
 # write a value
-verifyNR $$ "wrong write result" -w $METRIC $$
+WVAL=$$
+verifyNR $$ "wrong write result" -w $METRIC $WVAL
 
 # write same value with -y and expect exit 1
 # NOTE: You can't use quiet mode with -y or else the NoChange is exit 0
-verifyNR "NoChange" "-wy" "EXIT:1" -wy $METRIC $$
+verifyNR "NoChange" "-wy" "EXIT:1" -wy $METRIC $WVAL
+
+# testing onlyIf=IGNORE ... there is no shell command for this so:
+TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+print (nr.metric(\"$METRIC\").write($WVAL, onlyIf='IGNORE'))
+"
+verifyPython "onlyIf='IGNORE'" $WVAL "$TPGM"
+
+# you really shouldn't do dictionary=True with 'IGNORE', but test it anyway :)
+TPGM="import numerous
+nr = numerous.Numerous(apiKey=\"$APIKEY\")
+print (nr.metric(\"$METRIC\").write($WVAL, onlyIf='IGNORE', dictionary=True)['unchanged'])
+"
+verifyPython "onlyIf='IGNORE', dictionary=True" True "$TPGM"
+
 
 # interject a comment
 C='this be the naked comment'
