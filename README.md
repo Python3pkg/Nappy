@@ -19,23 +19,9 @@ See the [Wiki](https://github.com/outofmbufs/Nappy/wiki) for interface documenta
 ## python versions
 
 Works on both python2 and python3.
-
-## New in 1.6.3
-All server API endpoints converted to /v2 URLs. This is a minor update because there are no semantic changes. The few APIs that had real differences between /v1 and /v2 had been updated a long time ago, but the numerous server did not support /v2 endpoints for all APIs (i.e., the ones that had no reason to "go to" /v2 still had only /v1 endpoints). Numerous just activated their new server that now supports /v2 endpoints across the board; accordingly, 1.6.3 now uses the /v2 endpoints for everything. It's just a "spelling" change in the underlying endpoints.
-
-## New in 1.6.2
-* Voluntary throttling computes dynamic appropriate delay (vs hardcoded delay). If you are doing a gazillion API calls in a tight loop, this squeezes the maximum number of calls per minute out of the server (rate-limited by the server) while at the same time being "nice" to other apps using the same API key (i.e., same rate limit). The idea is that it is "smearing" the inevitable "out of API calls" delay over the tail end of your API allocation, the goal being to get the maximum number of APIs through per minute without actually hitting the hard rate limit. It works pretty well, getting about 299.7 API/minute (if no other apps are using your API key) vs a theoretical 300/minute, while respecting the API consumption of any other apps you are running and never actually hitting the hard rate limit from the server. It's pretty clear it's time to send the Engineer on vacation and lock development. (haha)
-* The "updated" parameter in write() can now also be a datetime (or a string)
-
-## 1.6.1 - 1.6.0
-* NumerousMetric() constructor accepts new "embed" format URL now as metric ID.
-* PERFORMANCE: Keep-alive works properly, server requests much faster now
-* Several minor bug fixes
-* Fine grained permissions support
-* Fixed exception raised when multiple matches in metricByLabel
-* Improved debug() function
-* Improved subfield/event notation handling in shell-cmd/nr.py
-* Switched to MIT license (less restrictive than BSD)
+## New in 1.6.4
+* event() method now supports 'at' API (lookup via timestamps)
+* ifOnly='ANY' in write() allows ignoring the NumerousMetricConflictError
 
 ## Getting started
 
