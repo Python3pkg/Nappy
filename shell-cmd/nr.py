@@ -473,7 +473,7 @@ if args.delete:
             gotOne = x
 
     if not gotOne:
-        print("--delete requires one of: {}".format(argsDict.keys()))
+        print("--delete requires one of: {}".format(musthaveone))
         bad = True
 
     if bad:

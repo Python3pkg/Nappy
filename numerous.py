@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20150902-1.6.4"
+_NumerousClassVersionString = "20151003-1.6.4++dev"
 
 #
 # metric object
@@ -250,20 +250,18 @@ class NumerousMetric:
             pass
 
         if not actualId:
-            # it's not a string, try the dictionary
+            # it's not a string, try it as a dictionary
             try:
-                actualId = id['metricId']
-            except TypeError:
+                keys = ('metricId', 'id')
+                actualId = next((id[k] for k in keys if k in id), None)
+            except TypeError:         # not a dict
                 pass
-            except KeyError:
-                # take ['id'] if it exists, else (implicitly) reraise KeyError
-                actualId = id['id']
 
         if not actualId:
             # not string, not dictionary, try integer
             try:
                 actualId = "{:d}".format(id)
-            except ValueError:     # we're all out of tricks... return error
+            except (TypeError, ValueError):   # all out of tricks...
                 raise NumerousError({}, -1, "Can't figure out id from \"{}\"".format(id))
 
         # str-fication is belt/suspenders in case (e.g.) was an int in a dict
@@ -344,7 +342,7 @@ class NumerousMetric:
 
     # printable/human representation of a metric
     def __str__(self):
-        rslt = "<NumerousMetric @ {}: ".format(hex(id(self)))
+        rslt = "<{} @ {}: ".format(self.__class__.__name__, hex(id(self)))
         try:
             self.__ensureCache()
             v = self.__cachedState      # just for brevity
@@ -526,6 +524,7 @@ class NumerousMetric:
         except NumerousError as x:
             # if onlyIf was specified and the error is "conflict"
             # (meaning: no change), raise ConflictError specifically
+            # or ignore it if you specified onlyIf="IGNORE"
             if onlyIf and x.code == requests.codes.conflict:    # 409
                 if onlyIf is not 'IGNORE':
                     raise NumerousMetricConflictError(x.details, "No Change")
@@ -630,18 +629,29 @@ class NumerousMetric:
 
     def event(self, evID=None, before=None):
         if evID and before:
-            raise TypeError("Cannot specify both evID and `before'")
+            raise ValueError("Cannot specify both evID and before")
         elif evID:
             api = self.__getAPI('event', 'GET', eventID=evID)
         else:
             try:
                 timestr = before.strftime('%Y-%m-%dT%H:%M:%S.')
                 try:
-                    # note: we truncate, rather than round, the microseconds
-                    # for simplicity (in case usec is 999900 for example).
+                    # note: we truncate, rather than round, the microseconds.
+                    # If, for example, usec is 999900 (i.e, 999.9msec) then
+                    # rounding could cause a cascade of carries into the other
+                    # fields. So we'd really have to add 500 usec to the time
+                    # object and THEN convert it.
+                    # XXX consider fixing this; however, the numerous
+                    #     server never returns a sub-millisecond time, so it's
+                    #     hard to see how this will get us into trouble -- if
+                    #     you came up with a time object independent of the
+                    #     server you have no way to determine accurate
+                    #     semantics down to sub-one-millisecond granularity.
+                    #     Said differently: if this matters to you, convert
+                    #     to string yourself and use that directly.
                     timestr += '{:03d}Z'.format(before.microsecond//1000)
-                except AttributeError:
-                    timestr += '000Z'  # no microseconds; use 000
+                except AttributeError: # if there isn't even a microseconds...
+                    timestr += '000Z'  # ... then obviously use 000msec
 
             except AttributeError:
                 timestr = before      # no strftime; it should be a string
@@ -687,11 +697,7 @@ class NumerousMetric:
     # (using HEAD on a photo is rejected by the server)
     def photoURL(self):
         v = self.read(dictionary=True)
-        if 'photoURL' in v:
-            u = self.nr._getRedirect(v['photoURL'])
-        else:
-            u = None
-        return u
+        return self.nr._getRedirect(v['photoURL']) if 'photoURL' in v else None
 
     # Be really sure you got this call correct because it cannot be undone
     # Deletes the metric from the numerous server
@@ -790,15 +796,11 @@ class Numerous:
         # Build up the substitutions from the defaults (if any) and non-None
         # kwargs. Note: we are careful not to be modifying the underlying
         # dictionaries (i.e., we are making a new one)
-        substitutions = {}
-        dflts = info.get('defaults', {})
-
-        # copy the defaults, assume no moron put a "None" in there
-        substitutions.update(dflts)
+        substitutions = info.get('defaults', {}).copy()
 
         # copy the supplied kwargs, which might have None (skip those)
         for k in kwargs:
-            if kwargs[k]:
+            if kwargs[k] is not None:
                 substitutions[k] = kwargs[k]
 
         # this is the stuff specific to the operation, e.g.,
@@ -891,7 +893,7 @@ class Numerous:
     # __str__ method for human readable string.
     # No particularly good reason for this other than "because can"
     def __str__(self):
-        return "<Numerous {{{}}} @ {}>".format(self.serverName, hex(id(self)))
+        return "<{} {{{}}} @ {}>".format(self.__class__.__name__, self.serverName, hex(id(self)))
 
 
     # XXX This is primarily for testing; control filtering of bogus duplicates
@@ -1672,15 +1674,25 @@ class NumerousAuthError(NumerousError):
 #
 # I found this a good way to handle supplying the API key so it's here
 # as a class method you may find useful. What this function does is
-# return you an API Key from a supplied string or "readable" object:
+# return you an API Key from a supplied string or "readable" object,
+# according to these possibilities:
 #
-#          a "naked" API key (in which case this function is a no-op)
+#   If "s" is an environment variable name, it overrides the
+#   default NUMEROUSAPIKEY name. "Is an environment variable name" simply
+#   means "name is found in os.environ[]"
+#
+#   If "s" is a "naked" API key not matching any of the other rules,
+#   it is used as-is. This is a handy no-op in some cases.
+#
+#   If "s" looks like:
 #          @-        :: meaning "get it from stdin"
 #          @blah     :: meaning "get it from the file "blah"
 #          /blah     :: get it from file /blah
 #          .blah     :: get it from file .blah (could be ../ etc)
-#        /readable/  :: if it has a .read method, get it that way
-#          None      :: get it from environment variable NUMEROUSAPIKEY
+#
+#   If "s" is actually an object with a .read method ... read it
+#
+#   If "s" is None (the default), get it from environment var NUMEROUSAPIKEY
 #
 # Where the "it" that is being gotten from any of those sources can be:
 #    a "naked" API key
@@ -1691,8 +1703,11 @@ class NumerousAuthError(NumerousError):
 #
 def numerousKey(s=None, credsAPIKey='NumerousAPIKey'):
 
+    if s:     # check to see if you gave us an ENVIRONMENT variable name
+        s = os.environ.get(s, s)   # no-op if s not found in the env
+
     if not s:
-        # try to get from environment
+        # see if can get from the default environment var NUMEROUSAPIKEY
         s = os.environ.get('NUMEROUSAPIKEY', None)
         if not s:
             return None
