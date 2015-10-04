@@ -586,7 +586,8 @@ for ID in \
   "{ 'metricId' : $METRIC }" \
   "{ 'metricId' : $DQ$METRIC$DQ }" \
   "{ 'id' : $METRIC }" \
-  "{ 'id' : $DQ$METRIC$DQ }"
+  "{ 'id' : $DQ$METRIC$DQ }" \
+  "{ 'metricId' : $DQ$METRIC$DQ, 'id' : 'BOGUS' }"
 do
 
   TPGM="import numerous
@@ -605,11 +606,11 @@ i = {}
 try:
   print(nr.metric(i).read())
   exit(1)
-except KeyError:
-  print('KeyError')
+except numerous.NumerousError:
+  print('NumerousError')
   exit(0)
 "
-verifyPython "id: {}" "KeyError" "$TPGM"
+verifyPython "id: {}" "NumerousError" "$TPGM"
 
   TPGM="import numerous
 nr = numerous.Numerous(apiKey=\"$APIKEY\")
@@ -1393,7 +1394,8 @@ try:
 except:
   sysvmd = -1
 
-print('{} {} {}'.format(n, nr.statistics['throttleVoluntaryDelays'], sysvmd))
+# print the int times 1000 to make the subsequent shell test easier
+print('{} {} {}'.format(n, int(1000*nr.statistics['throttleVoluntaryDelays']), int(1000*sysvmd)))
 exit(0)
 "
 
@@ -1403,9 +1405,9 @@ exit(0)
   EXPECTED=`echo $RESULT | awk '{print $3}'`
   if [ "$TIME" -eq "$EXPECTED" ]
   then
-    infomsg "Delay was $TIME after $CALLS calls, as expected"
+    infomsg "Delay was $TIME msec after $CALLS calls, as expected"
   else
-    failout CONTINUE "Delay was $TIME after $CALLS calls, but expected $EXPECTED"
+    failout CONTINUE "Delay was $TIME msec after $CALLS calls, but expected $EXPECTED"
   fi
 
   # at the risk of being silly... the voluntary throttling test synchronizes
