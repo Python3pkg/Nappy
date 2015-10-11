@@ -31,7 +31,21 @@ Example code:
 from numerous import Numerous
 
 MyKey = "nmrs_3Vblahblah"         # your personal NumerousApp API key
-MyMetric = "5746205777638039629"  # ID of a metric you have access to
+
+#
+# IMPORTANT The metric ID should look like a large integer. 
+# Something like 9208972516053673667 made up entirely of digits
+# (but pass it in as a string). Get this from Developer Info on
+# the screen for the individual metric you are interested in.
+#
+# You can use a URL but make sure to pass in the entire URL, e.g.
+#   MyMetric = "http://n.numerousapp.com/m/1xyr8b6ju11ab"
+# not
+#   MyMetric = "1xyr8b6ju11ab"
+#
+# The numeric ID (as shown in the example code below) is the preferred way.
+#
+MyMetric = "9208972516053673667"  # ID of a metric you have access to
 
 nr = Numerous(apiKey=MyKey)
 metric = nr.metric(MyMetric)
