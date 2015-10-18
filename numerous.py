@@ -56,7 +56,7 @@ except ImportError:
   from httplib import HTTPConnection
 # --- - --- - ---
 
-_NumerousClassVersionString = "20151003-1.6.4++dev"
+_NumerousClassVersionString = "20151011-1.6.4++dev"
 
 #
 # metric object
@@ -205,6 +205,9 @@ class NumerousMetric:
         #
         # "id" should normally be the naked metric id (as a string).
         #
+        # The true metric ID always looks like a huge integer, e.g.:
+        #     2733614827342384
+        #
         # It can also be a nmrs: URL, e.g.:
         #     nmrs://metric/2733614827342384
         #
@@ -219,6 +222,9 @@ class NumerousMetric:
         #
         # in which case we "just know" that the tail is a base36
         # encoding of the ID.
+        #
+        # DO NOT pass in the "naked" base36 form (e.g., '1x8ba7fjg72d').
+        # That won't work. Pass in the true integer string or the full URL.
         #
         # The decoding logic here makes the specific assumption that
         # the presence of a '/' indicates a URL vs a naked metric ID. This
@@ -236,7 +242,7 @@ class NumerousMetric:
         actualId = None
 
         # web and embed URL indicators:
-        b36 = [ 'm', 'e' ]    # http://n.numerousapp.com/{m|e}/1x8bd7ejg72d
+        b36 = ( 'm', 'e' )    # http://n.numerousapp.com/{m|e}/1x8bd7ejg72d
         try:
             fields = id.split('/')
             if len(fields) == 1:      # the normal string '123123123' case
@@ -1311,10 +1317,10 @@ class Numerous:
         for attempt in range(self._arbitraryMaximumTries):
 
             self.statistics['serverRequests'] += 1
+            if self.__debug > 0:
+                print("DEBUG: request({}, {})".format(httpmeth, url))
 
             try:
-                if self.__debug > 0:
-                    print("DEBUG: request({}, {})".format(httpmeth, url))
 
                 # the theory here is: make a new Session (next time)
                 # if we ever exception out of here. I'm not entirely sure
@@ -1343,64 +1349,50 @@ class Numerous:
             if self.__debug > 9:
                 print(resp.text)
 
-            # invoke the rate-limiting policy. Note that this happens
-            # after the request and normally the policy is simply: if we were
-            # told "Too Many Requests" then delay for a while and try again.
-
             try:
-               rateRemain = int(resp.headers['X-Rate-Limit-Remaining'])
-               rateReset = int(resp.headers['X-Rate-Limit-Reset'])
-
-               # make these available in statistics as an FYI too
-               self.statistics['rate-remaining'] = rateRemain
-               self.statistics['rate-reset'] = rateReset
-
+                r_remain = int(resp.headers['X-Rate-Limit-Remaining'])
+                r_reset = int(resp.headers['X-Rate-Limit-Reset'])
             except (KeyError, ValueError):
                 # some server errors (e.g., Not Authorized) give no rate info
-                rateRemain = -1
-                rateReset = -1
+                r_remain = -1
+                r_reset = -1
 
-            tp = { 'debug' : self.__debug,
-                   'attempt' : attempt,
-                   'rate-remaining' : rateRemain,
-                   'rate-reset' : rateReset,
-                   'result-code' : resp.status_code,
-                   'resp' : resp,
-                   'request' : { 'http-method' : httpmeth,
-                                 'url' : url,
-                                 'jdict' : jdict
-                                }
+            # make them available in statistics as an FYI
+            self.statistics['rate-remaining'] = r_remain
+            self.statistics['rate-reset'] = r_reset
+
+
+            # invoke the rate-limiting ("throttle") policy.
+            #
+            # NOTE: the "normal" case is for the throttle to return False,
+            # meaning "no retry needed". That is the normal path for the
+            # "for attempts in ..." loop to break (almost always with just
+            # one attempt). Assuming the standard throttle policy is in use,
+            # only 429/TooManyRequests causes multiple attempts.
+            #
+
+            # lots and lots of params, sorry, that's just the way it is...
+            tp = { 'debug' : self.__debug, 'attempt' : attempt,
+                   'rate-remaining' : r_remain, 'rate-reset' : r_reset,
+                   'result-code' : resp.status_code, 'resp' : resp,
+                   'request' : { 'http-method' : httpmeth, 'url' : url,
+                                 'jdict' : jdict }
                  }
-
             td = self.__throttlePolicy[1]
             up = self.__throttlePolicy[2]
             if not self.__throttlePolicy[0](self, tp, td, up):
                 break
 
-        goodCodes = api.get('success-codes', [ requests.codes.ok ])
 
-        if resp.status_code in goodCodes:
-            if len(resp.text) == 0:
-                # On some requests that return "nothing" the server
-                # returns {} ... on others it literally returns nothing.
-                # Requests library doesn't like decoding zero-len JSON
-                # and throws a bizarre exception; hence this explicit
-                # "Look Before You Leap" case instead of catching exception.
-                rj = {}
-            else:
-                try:                   # only fails if server returns junk
-                    rj = resp.json()
-                except ValueError:
-                    # This means we've either really screwed up somehow
-                    # or (more likely? less likely?) there's a server
-                    # bug. In any case, we can't decipher reply...
-                    # so report that
-                    rj = { 'error-type' : "JSONDecode",
-                           'code' : resp.status_code,
-                           'value' : resp.text, 'id' : url,
-                           'reason' : "Could not decode server json" }
-                    raise NumerousError(rj, rj['code'], "ValueError")
-        else:
+        # at this point we're out of the retry loop because the throttle
+        # policy returned false (i.e., no retry needed). We now have
+        # a response that should be accepted if it's one of the "good"
+        # codes (that varies by particular API) or raise an exception
+        # otherwise (e.g, Unauthorized, Not Found, etc).
+
+        dflt_good = ( requests.codes.ok, )   # 200/OK for most requests
+        if resp.status_code not in api.get('success-codes', dflt_good):
+            # didn't get a good response; figure out what exception to raise
             reason = resp.raw.reason
             rj = { 'error-type' : "HTTPError", 'code' : resp.status_code,
                    'reason' : reason, 'id' : url,
@@ -1410,6 +1402,27 @@ class Numerous:
                 raise NumerousAuthError(rj, resp.status_code, reason)
             else:
                 raise NumerousError(rj, resp.status_code, reason)
+
+        # On some APIs that return "nothing" the server returns "{}" but
+        # on others it literally returns zero len data. Unfortunately
+        # resp.json() raises an exception for zero-len JSON. We don't
+        # want to generally ignore JSON decode exceptions, so one way or
+        # another we have to test for this case. Thus, we test first despite
+        # the general style admonition of not doing "Look Before You Leap"
+        rj = {}
+        if len(resp.text) > 0:
+            try:                   # only fails if server returns junk
+                rj = resp.json()
+            except ValueError:
+                # This means we've either really screwed up somehow
+                # or (more likely? less likely?) there's a server
+                # bug. In any case, we can't decipher reply...
+                # so report that
+                rj = { 'error-type' : "JSONDecode",
+                       'code' : resp.status_code,
+                       'value' : resp.text, 'id' : url,
+                       'reason' : "Could not decode server json" }
+                raise NumerousError(rj, rj['code'], "ValueError")
 
         return rj
 
