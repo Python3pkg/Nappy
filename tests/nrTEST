@@ -518,7 +518,7 @@ metric.subscribe(sb)
 }
 
 
-
+####### THIS IS WHERE THE TESTING BEGINS ########
 
 #
 # Test the -k function first of all
@@ -535,6 +535,28 @@ infomsg "Version under test:" `$NR -V`
 $NR -k > $TMPFILE
 if [ $? -ne 0 ]; then failout "Unable to get apikey. Check NUMEROUSAPIKEY."; fi
 APIKEY=`cat $TMPFILE`
+
+
+# XXX because of the "InsecurePlatformWarning" cruft in older
+#     versions of python ... see if we are going to have that
+#     problem and if so ... warn about it once and then put
+#     the appropriate "ignore" into the environment to squelch it
+
+WARNINGSFILE=${TMPFILE}.xxwarnxx
+$PYTHON -c "import numerous; x = numerous.Numerous().user()" 2> $WARNINGSFILE
+grep -q Insecure $WARNINGSFILE
+if [ $? -eq 0 ]
+then
+  infomsg "Got the InsecurePlatform warning; python needs to be upgraded"
+  infomsg "The full warning text is: "
+  infomsg " : : : : : : "
+  cat $WARNINGSFILE
+  infomsg " : : : : : : "
+  infomsg "Suppressing warnings during this run"
+  PYTHONWARNINGS=ignore export PYTHONWARNINGS
+fi
+rm -f $WARNINGSFILE
+
 
 #
 # See if we can successfully connect
