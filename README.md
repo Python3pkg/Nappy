@@ -150,7 +150,24 @@ Arguably this doesn't belong in numerous.py and belongs in a more general "crede
 
 ## Miscellaneous Notes
 
-* shell-cmd: If you install numerous.py using pip you can just use the "nr" and "nr.py" commands as-is (the "nr" wrapper is redundant). If you manually install the class library then you should examine "nr" and set the PYTHONPATH appropriately.
+*InsecurePlatformWarning*
 
-* shell-cmd/nr LANG: The NumerousApp API will sometimes return strings with the ellipsis ("...") unicode character. If you are running on a system that defaults LANG to C (I saw this on FreeBSD) you'll get an encoding exception when using the shell command ("nr") when this character occurs.  Set environment variable LANG to en_US.UTF-8 or similar as appropriate.
+If you see a warning message about "A true SSLContext object is not available" and/or "InsecurePlatformWarning" ... you have stumbled into a maze of twisty passages regarding older versions of python and newer versions of `requests` and SSL, and some security/certificate issues. This isn't a `Numerous` problem; it's a generic problem with `requests`, `ssl`, and the location (or possibly even existence) of the right root certificates on your machine. The best way to fix this is to upgrade to a newer version of everything; python should be at least 2.7.9 and preferably python3. You can, however, also temporarily work around it by adding this to your code at the beginning:
+
+    import sys
+    if sys.version_info[:3] < (2, 7, 9):
+        import logging
+        logging.captureWarnings(True)
+
+which will simply turn off the warning. The underlying issue, which is that your overall configuration isn't properly checking SSL certificates, remains true (and has nothing to do with `Numerous` however it may be that you first experience it here because the numerous server requires SSL communication)
+
+There are several other/better (and more complicated) approaches to fixing this; though the best practice remains: upgrade to a newer python infrastructure.
+
+*shell-cmd*
+
+If you install numerous.py using pip you can just use the "nr" and "nr.py" commands as-is (the "nr" wrapper is redundant). If you manually install the class library then you should examine "nr" and set the PYTHONPATH appropriately.
+
+*shell-cmd/nr LANG*
+
+The NumerousApp API will sometimes return strings with the ellipsis ("...") unicode character. If you are running on a system that defaults LANG to C (I saw this on FreeBSD) you'll get an encoding exception when using the shell command ("nr") when this character occurs.  Set environment variable LANG to en_US.UTF-8 or similar as appropriate.
 
