@@ -159,9 +159,21 @@ If you see a warning message about "A true SSLContext object is not available" a
         import logging
         logging.captureWarnings(True)
 
-which will simply turn off the warning. The underlying issue, which is that your overall configuration isn't properly checking SSL certificates, remains true (and has nothing to do with `Numerous` however it may be that you first experience it here because the numerous server requires SSL communication)
+which will simply turn off the warning. NOTE: This actually turns off ALL warnings. 
 
-There are several other/better (and more complicated) approaches to fixing this; though the best practice remains: upgrade to a newer python infrastructure.
+Alternatively, you can put "PYTHONWARNINGS=ignore" into your environment, e.g., by invoking python this way if you are using sh/bash/etc:
+
+    PYTHONWARNINGS=ignore python
+
+and/or something like this in an appropriate shell startup file
+
+    PYTHONWARNINGS=ignore export PYTHONWARNINGS
+
+Again note that doing this is turning off all python warnings, which arguably isn't a great idea (but works).
+
+The underlying issue, which is that your overall configuration isn't properly checking SSL certificates, remains true (and has nothing to do with `Numerous` however it may be that you first experience it here because the numerous server requires SSL communication)
+
+There are several other/better (and more complicated) approaches to fixing this; though the best practice remains: upgrade to a newer python infrastructure. I am not putting pointers to those here because they all have various tradeoffs; google this topic if you want to start down the maze of twisty passages on your own...
 
 ### shell-cmd
 
