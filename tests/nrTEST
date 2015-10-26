@@ -161,7 +161,8 @@ then
           echo 'This test forces HTTP code 429 throttling. Takes a minute or so.'
           echo 'Just expect a bunch of raw statistics output if this works'
           echo ' ... '
-          PYTHONPATH=.. python $T429TEST --statistics
+          # XXX PYTHONWARNINGS cruft because of SSL warnings (ick)
+          PYTHONWARNINGS=ignore PYTHONPATH=.. python $T429TEST --statistics
           echo ' ... ... T429 DONE(P2) ... ...'
       fi
     fi
@@ -334,7 +335,7 @@ ensureAPIQuota() {
 failout() {
     DIE=yes
     if [ "x$1" = "xCONTINUE" ]; then DIE=no; shift; fi
-    echo "$FAIL_PREFIX" "$*"
+    echo "$FAIL_PREFIX" "$@"
     if [ "$DIE" = "yes" ]; then exit 1; fi
     infomsg " ... but CONTINUING anyway"
 }
@@ -357,9 +358,9 @@ doNR() {
 
   if [ "x$NR500" = "x" ]     # XXX just to make the output pretty (no extra space) ...
   then
-    echo "$TEST_PREFIX" "$NR $*"
+    echo "$TEST_PREFIX" "$NR $@"
   else
-    echo "$TEST_PREFIX" "$NR $NR500 $*"
+    echo "$TEST_PREFIX" "$NR $NR500 $@"
   fi
 
   $NR $NR500 "$@" > $TMPFILE
@@ -454,12 +455,12 @@ verifyPython() {
 # Just a way to put an info into the output stream, properly formatted
 #
 infomsg() {
-  echo "$INFO_PREFIX" "$*"
+  echo "$INFO_PREFIX" "$@"
 }
 
 # variant for things skipped via -Q
 quickmsg() {
-  echo "$QUIK_PREFIX" "$*"
+  echo "$QUIK_PREFIX" "$@"
 }
 
 # utility function to parse a JSON object and return (via RESULT) a field
