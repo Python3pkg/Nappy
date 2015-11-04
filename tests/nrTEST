@@ -148,7 +148,7 @@ then
 
     NRPY=../shell-cmd/nr.py
 
-    if [ $DPY2 == yes ]
+    if [ $DPY2 = yes ]
     then
       echo ' - - - - TESTING PYTHON 2 - - - -'
 
@@ -168,7 +168,7 @@ then
     fi
 
 
-    if [ $DPY3 == yes ]
+    if [ $DPY3 = yes ]
     then
       echo ' - - - - TESTING PYTHON 3 - - - -'
       NR500="$NR500" PYX=python3 NRX="python3 $NRPY" NRTX="$NRTEST" PYTHONPATH=.. $NRTEST -X $QK $CT
