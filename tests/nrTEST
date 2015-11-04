@@ -937,10 +937,10 @@ verifyPython "Checking timestamps are 24 hours apart" "86400.0" "$TPGM"
 
 # another date test .. there was a bug that only showed up on dates
 # in the future (it was obscure!) so do one of those
-doNR -wq $TMETRIC "EPOCHTIME: 1/15/2050"
+doNR -wq $TMETRIC "EPOCHTIME: 1/15/2038"
 doNR $TMETRIC
 T0="$RESULT"
-doNR -wq $TMETRIC "EPOCHTIME: 1/16/2050"
+doNR -wq $TMETRIC "EPOCHTIME: 1/16/2038"
 doNR $TMETRIC
 T1="$RESULT"
 verifyPython "Checking future timestamps are 24 hours apart" "86400.0" "$TPGM"
