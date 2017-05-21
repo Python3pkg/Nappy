@@ -85,7 +85,7 @@ if args.debug:
 
 
 if (not args.quiet) and (args.ncalls > 300) and (args.throttled == -1):
-    print("Performing {} calls; expect this to take roughly {:.1f} minutes".format(args.ncalls, (args.ncalls/300.0)+1))
+    print(("Performing {} calls; expect this to take roughly {:.1f} minutes".format(args.ncalls, (args.ncalls/300.0)+1)))
 
 if (not args.nosync) or args.capdelay:
     sync_to_top_of_api_rate(nr)
@@ -143,12 +143,12 @@ while True:
 t1 = time.time()
 
 if not args.quiet:
-    print("Smallest rate remaining was: ", smallest_rate_remaining)
-    print("Performed {:.2f} operations per minute".format((n_ops*60.0)/(t1-t0)))
+    print(("Smallest rate remaining was: ", smallest_rate_remaining))
+    print(("Performed {:.2f} operations per minute".format((n_ops*60.0)/(t1-t0))))
 
 if args.statistics:
     for k in nr.statistics:
-        print("{:>24s}: {}".format(k, nr.statistics[k]))
+        print(("{:>24s}: {}".format(k, nr.statistics[k])))
 
 if deleteIt:
     testmetric.crushKillDestroy()

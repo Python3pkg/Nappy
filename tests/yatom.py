@@ -138,7 +138,7 @@ if args.testtype == "ADD":
 elif args.testtype == "ONLY":
     wargs = { 'onlyIf' : True }
 else:
-    print("Bad testtype",args.testtype)
+    print(("Bad testtype",args.testtype))
     exit(1)
 
 
@@ -215,7 +215,7 @@ if args.testtype == "ADD":
     if testmetric.read() != args.nwrites:
         exitStatus = 1
         if not args.quiet:
-            print("Wrong final value: {}".format(testmetric.read()))
+            print(("Wrong final value: {}".format(testmetric.read())))
 elif args.testtype == "ONLY":
     changes = 0
     for x in results:
@@ -225,7 +225,7 @@ elif args.testtype == "ONLY":
     if changes != 1:
         exitStatus = 1
         if not args.quiet:
-            print("It changed {} times instead of the expected once.".format(changes))
+            print(("It changed {} times instead of the expected once.".format(changes)))
 
 if deleteIt and (exitStatus == 0):
     testmetric.crushKillDestroy()

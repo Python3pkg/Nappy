@@ -53,7 +53,7 @@ try:
   from http.client import HTTPConnection
 except ImportError:
   # You are using python2.
-  from httplib import HTTPConnection
+  from http.client import HTTPConnection
 # --- - --- - ---
 
 _NumerousClassVersionString = "20151020-1.6.4++dev"
@@ -1318,7 +1318,7 @@ class Numerous:
 
             self.statistics['serverRequests'] += 1
             if self.__debug > 0:
-                print("DEBUG: request({}, {})".format(httpmeth, url))
+                print(("DEBUG: request({}, {})".format(httpmeth, url)))
 
             try:
 
@@ -1347,7 +1347,7 @@ class Numerous:
                 self.statistics['serverResponseTimes'] = et
 
             if self.__debug > 9:
-                print(resp.text)
+                print((resp.text))
 
             try:
                 r_remain = int(resp.headers['X-Rate-Limit-Remaining'])
@@ -1487,7 +1487,7 @@ class _Numerous_ChunkedAPIIter:
     #     and a try/except import for httplib vs http.client I was able to
     #     backport to py2. To be clear: this is a python3 file. But now
     #     it happens to also work in python2.
-    def next(self):
+    def __next__(self):
         return self.__next__()
 
 

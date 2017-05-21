@@ -431,7 +431,7 @@ args = parser.parse_args()
 #
 
 if args.version:
-    print(Numerous(None).agentString)
+    print((Numerous(None).agentString))
     exit(1)
 
 
@@ -461,19 +461,19 @@ if args.delete:
     bad = False
     for x in nope:
         if argsDict.get(x):
-            print("Can't have --delete and --" + x)
+            print(("Can't have --delete and --" + x))
             bad = True
 
     gotOne = None
     for x in musthaveone:
         if argsDict.get(x):
             if gotOne:
-                print("Can only have one of {}, {} with --delete".format(x, gotOne))
+                print(("Can only have one of {}, {} with --delete".format(x, gotOne)))
                 bad = True
             gotOne = x
 
     if not gotOne:
-        print("--delete requires one of: {}".format(musthaveone))
+        print(("--delete requires one of: {}".format(musthaveone)))
         bad = True
 
     if bad:
@@ -496,7 +496,7 @@ if args.user:
             optname = k
 
         if argsDict.get(k):
-            print("Can't have --user and --" + optname)
+            print(("Can't have --user and --" + optname))
             bad = True
     if bad:
         exit(1)
@@ -556,7 +556,7 @@ if args.onlyIf and not args.write:
 if args.write or args.delete:
     for m in args.keyvals[0::2]:
         if '[' in m:
-            print("Can only use [field] notation for reading:", m)
+            print(("Can only use [field] notation for reading:", m))
             exit(1)
 
 
@@ -596,7 +596,7 @@ if args.ratelimits > 0 or args.ensurerate > 0:
             remain = 0          # report that as zero
             refresh = nrRaw.statistics['rate-reset']
         elif x.code == 401:     # make a nice error output with unauthorized
-            print("Server says: {}. Check -c or NUMEROUSAPIKEY environment.".format(x.reason))
+            print(("Server says: {}. Check -c or NUMEROUSAPIKEY environment.".format(x.reason)))
             exit(1)
         else:
             raise               # anything else, not sure what is going on, reraise it
@@ -617,7 +617,7 @@ if args.ratelimits > 0 or args.ensurerate > 0:
             time.sleep(t)
 
     elif not bequiet:
-        print("Remaining APIs: {}. New allocation in {} seconds.".format(remain,refresh))
+        print(("Remaining APIs: {}. New allocation in {} seconds.".format(remain,refresh)))
 
     if args.ratelimits > 1:   # -RR means just do this then exit
         exit(0)
@@ -672,7 +672,7 @@ except NumerousAuthError:
     print("Authorization failed. Likely cause is bad credentials (API key)")
     exit(1)
 except NumerousError as x:
-    print("Server error: {} {} ({})".format(x.code, x.reason, x.details))
+    print(("Server error: {} {} ({})".format(x.code, x.reason, x.details)))
     exit(1)
 
 #
@@ -823,13 +823,13 @@ def printStreamResults(items, fld):
     else:
         for i in items:
             if fld:
-                print(i.get(fld,None))
+                print((i.get(fld,None)))
             else:
                 c = i.get('commentBody', None)
                 a = i.get('authorId', None)
                 v = i.get('value', None)
                 sID = i.get('id', '??? NO ID ???')
-                print(i['kind'], sID, v, i['updated'], a, "--", c)
+                print((i['kind'], sID, v, i['updated'], a, "--", c))
 
 def printEventResults(r, fld):
     if type(r) == str:
@@ -837,13 +837,13 @@ def printEventResults(r, fld):
     else:
         for i in r:
             if fld:
-                print(i.get(fld,None))
+                print((i.get(fld,None)))
             else:
                 # the initial value when a metric is created
                 # does not have an authorId (is this a server bug?)
                 # so we need to be careful...
                 a = i.get('authorId', 'INITIAL-CREATION-VALUE')
-                print(i['value'],"@",i['updated'],"by",a,"id",i['id'])
+                print((i['value'],"@",i['updated'],"by",a,"id",i['id']))
 
 def printPerms(r, fld):
     if type(r) == str:
@@ -851,7 +851,7 @@ def printPerms(r, fld):
     else:
         for i in r:
             if fld:
-                print(i.get(fld,None))
+                print((i.get(fld,None)))
             else:
                 s = i['userId'] + " on " + i['metricId'] + ": "
                 for k in [ 'readMetric', 'updateValue', 'editPermissions', 'editMetric' ]:
@@ -862,7 +862,7 @@ def printPerms(r, fld):
                 print(s)
 
 def printDeleteResults(r):
-    print("%s/%s -- %s" %(r['ID'], r['delID'], r['result']))
+    print(("%s/%s -- %s" %(r['ID'], r['delID'], r['result'])))
 
 
 
@@ -948,7 +948,7 @@ def mainCommandProcessing(nr, args):
                 x = id.split('[')
                 # very rudimentary syntax checks
                 if len(x) != 2 or not x[1].endswith(']'):
-                    print("bad metric specification", m)
+                    print(("bad metric specification", m))
                     exit(1)
                 # nuke the trailing ']' on the field spec
                 fld = x[1][:-1]
@@ -995,7 +995,7 @@ def mainCommandProcessing(nr, args):
                 if not args.quiet:               # quiet is dumb, but whatever
                     if args.name:
                         id = s['metricId']
-                        print("{} {}".format(id, nr.metric(id).label()))
+                        print(("{} {}".format(id, nr.metric(id).label())))
                     else:
                         print(s)
                         print(" ")
@@ -1003,9 +1003,9 @@ def mainCommandProcessing(nr, args):
             u = nr.user()
             if not args.quiet:
                 if args.json:
-                    print(json.dumps(u))
+                    print((json.dumps(u)))
                 else:
-                    print("User: {userName} [ {fullName} ], id: {id}".format(**u))
+                    print(("User: {userName} [ {fullName} ], id: {id}".format(**u)))
 
         else:
             vlist = getMetrics(nr, args.limit)
@@ -1014,11 +1014,11 @@ def mainCommandProcessing(nr, args):
             if not args.quiet:
                 for v in vlist:
                     if args.json:
-                        print(json.dumps(v))
+                        print((json.dumps(v)))
                     elif args.name:
-                        print(v['id'] + " " + v['label'])
+                        print((v['id'] + " " + v['label']))
                     else:
-                        print(v['id'])
+                        print((v['id']))
 
     elif args.user and args.write and args.photo:
         v = doPhotoWrite(nr, args.keyvals[0])
@@ -1054,7 +1054,7 @@ def mainCommandProcessing(nr, args):
                     try:
                         metric = nr.metricByLabel(s, matchType=mtype)
                     except NumerousMetricConflictError as e:
-                        print("More than one match: ", e.details)
+                        print(("More than one match: ", e.details))
                         metric = None
                 if not metric:
                     metric = nr.metric(r['ID'])
@@ -1091,7 +1091,7 @@ def mainCommandProcessing(nr, args):
                         # "deleting" a subscription means turning off
                         # all notifications, which we do somewhat generalized:
                         s = metric.subscription()
-                        for k in s.keys():
+                        for k in list(s.keys()):
                             if k.startswith('notif') and s[k] == True:
                                 s[k] = False
                         metric.subscribe(s)
@@ -1126,7 +1126,7 @@ def mainCommandProcessing(nr, args):
                     # and protect our __naked__ hack
                     if naked in jval:
                         # seriously, you are a twit...
-                        print("Invalid Numerous JSON given: ", val)
+                        print(("Invalid Numerous JSON given: ", val))
                         exit(1)
                 except (TypeError, ValueError):
                     # it was naked, or malformed.
@@ -1341,7 +1341,7 @@ def mainCommandProcessing(nr, args):
         if not args.quiet:
             if args.json:
                 j = { 'Results' : resultList }
-                print(json.dumps(j))
+                print((json.dumps(j)))
             else:
                 for r in resultList:
                     rslt = r['result']
@@ -1362,24 +1362,24 @@ def mainCommandProcessing(nr, args):
 
 
     if args.statistics:
-        print("Statistics for {}:".format(nr))
+        print(("Statistics for {}:".format(nr)))
         for k in nr.statistics:
-            print("{:>24s}: {}".format(k, nr.statistics[k]))
+            print(("{:>24s}: {}".format(k, nr.statistics[k])))
 
     if args.requestlog:
         for rx in log_of_all_requests:
             rq = rx[0]
-            print("{} {}".format(rq['http-method'], rq['url']))
+            print(("{} {}".format(rq['http-method'], rq['url'])))
             if rq['jdict']:
-                print("  additional param dictionary: ", rq['jdict'])
-            print("    --> {}".format(rx[1]))
+                print(("  additional param dictionary: ", rq['jdict']))
+            print(("    --> {}".format(rx[1])))
 
     return exitStatus
 
 try:
     xstat = mainCommandProcessing(nrServer, args)
 except NumerousError as x:
-    print("Server error: {} {} ({})".format(x.code, x.reason, x.details))
+    print(("Server error: {} {} ({})".format(x.code, x.reason, x.details)))
     xstat = 1
 
 exit(xstat)

@@ -22,7 +22,7 @@ import threading
 try:
   import queue
 except:    # python2
-  import Queue as queue
+  import queue as queue
 
 #
 # arguments:
@@ -156,7 +156,7 @@ for t in theThreads:
 if args.statistics:
     while True:
         try:
-            print(outputQ.get(block=False))
+            print((outputQ.get(block=False)))
         except queue.Empty:
             break
 

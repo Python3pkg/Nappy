@@ -7,7 +7,7 @@ MyMetric = "5746205777638039629"  # ID of a metric you have access to
 nr = Numerous(apiKey=MyKey)
 metric = nr.metric(MyMetric)
 
-print (metric.read())
+print((metric.read()))
 
 # other ways to handle API keys
 #
